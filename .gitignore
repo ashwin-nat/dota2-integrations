@@ -1,1 +1,9 @@
+# uv / Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.python-version
+
+# Sample GSI payloads (local test data, not source)
 *.json
