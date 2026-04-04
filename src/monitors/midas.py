@@ -21,7 +21,9 @@ class MidasChargeMonitor:
             if not isinstance(item, MultiChargeItem) or item.name != "item_hand_of_midas":
                 continue
             if item.charges == 2 and self._old_charges != 2:
-                await self._bus.emit(EventCode.MIDAS_OVERCHARGED, slot_id=item.slot_id, charges=item.charges)
+                self._bus.emit(EventCode.MIDAS_OVERCHARGED, slot_id=item.slot_id, charges=item.charges)
+                print(f"Midas overcharged in slot {item.slot_id}!")
             if item.charges == 1 and self._old_charges == 0:
-                await self._bus.emit(EventCode.MIDAS_CHARGED, slot_id=item.slot_id, charges=item.charges)
+                self._bus.emit(EventCode.MIDAS_CHARGED, slot_id=item.slot_id, charges=item.charges)
+                print(f"Midas charged in slot {item.slot_id}!")
             self._old_charges = item.charges

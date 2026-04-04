@@ -2,6 +2,9 @@ from enum import Enum, auto
 
 
 class EventCode(Enum):
+    # Ingress
+    INCOMING_DATA = auto()      # raw GSI payload received from HTTP
+
     # State lifecycle
     STATE_UPDATED = auto()
 

@@ -29,7 +29,7 @@ class GameState:
         self._version += 1
         self.items = parse_items(data["items"]) if "items" in data else None
         await self._on_update()
-        await self._bus.emit(EventCode.STATE_UPDATED, state=self)
+        self._bus.emit(EventCode.STATE_UPDATED, state=self)
 
     def version(self) -> int:
         return self._version

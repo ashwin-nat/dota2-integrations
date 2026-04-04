@@ -1,6 +1,6 @@
 import asyncio
 
-from src.events import EventBus
+from src.events import EventBus, EventCode
 from src.ingress.http_server import serve
 from src.state.store import GameState
 
@@ -9,8 +9,13 @@ async def main() -> None:
     bus = EventBus()
     state = GameState(bus)
 
+    @bus.on(EventCode.INCOMING_DATA)
+    async def ingest(data: dict) -> None:
+        await state.set(data)
+
     tasks = [
-        asyncio.create_task(serve(state)),
+        asyncio.create_task(bus.process_forever()),
+        asyncio.create_task(serve(bus)),
     ]
 
     await asyncio.gather(*tasks)
