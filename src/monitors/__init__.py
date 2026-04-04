@@ -1,4 +1,4 @@
 from .base import Monitor
-from .midas import MidasChargeMonitor
+from .midas import MidasMonitor
 
-__all__ = ["Monitor", "MidasChargeMonitor"]
+__all__ = ["Monitor", "MidasMonitor"]

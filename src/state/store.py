@@ -2,7 +2,7 @@ import asyncio
 
 from .items import Items, parse_items
 from src.events import EventBus, EventCode
-from src.monitors import Monitor, MidasChargeMonitor
+from src.monitors import Monitor, MidasMonitor
 
 
 class GameState:
@@ -15,7 +15,7 @@ class GameState:
         self._register_monitors()
 
     def _register_monitors(self) -> None:
-        self._monitors.append(MidasChargeMonitor(self._bus))
+        self._monitors.append(MidasMonitor(self._bus))
 
     def _register_monitor(self, monitor: Monitor) -> None:
         self._monitors.append(monitor)
