@@ -1,5 +1,8 @@
-from .items import Items, parse_items, MultiChargeItem
+import asyncio
+
+from .items import Items, parse_items
 from src.events import EventBus, EventCode
+from src.monitors import Monitor, MidasChargeMonitor
 
 
 class GameState:
@@ -8,8 +11,14 @@ class GameState:
         self._data: dict | None = None
         self._version: int = 0
         self.items: Items | None = None
+        self._monitors: list[Monitor] = []
+        self._register_monitors()
 
-        self._old_midas_charges: int | None = None
+    def _register_monitors(self) -> None:
+        self._monitors.append(MidasChargeMonitor(self._bus))
+
+    def _register_monitor(self, monitor: Monitor) -> None:
+        self._monitors.append(monitor)
 
     def get(self) -> dict | None:
         return self._data
@@ -25,19 +34,5 @@ class GameState:
     def version(self) -> int:
         return self._version
 
-    async def _on_update(self):
-        if not self.items:
-            return
-        for item in self.items:
-            if not isinstance(item, MultiChargeItem):
-                continue
-            if item.name != "item_hand_of_midas":
-                continue
-
-            if item.charges == 2 and self._old_midas_charges != 2:
-                await self._bus.emit(EventCode.MIDAS_OVERCHARGED, slot_id=item.slot_id, charges=item.charges)
-
-            if item.charges == 1 and self._old_midas_charges == 0:
-                await self._bus.emit(EventCode.MIDAS_CHARGED, slot_id=item.slot_id, charges=item.charges)
-
-            self._old_midas_charges = item.charges
+    async def _on_update(self) -> None:
+        await asyncio.gather(*[monitor.update(self) for monitor in self._monitors])
