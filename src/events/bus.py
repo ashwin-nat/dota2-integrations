@@ -31,6 +31,3 @@ class EventBus:
         for handler in self._handlers[code]:
             await handler(**kwargs)
 
-
-# Module-level singleton — import and use directly.
-bus = EventBus()

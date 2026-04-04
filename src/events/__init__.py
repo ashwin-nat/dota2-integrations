@@ -1,4 +1,4 @@
-from .bus import EventBus, bus
+from .bus import EventBus
 from .codes import EventCode
 
-__all__ = ["EventBus", "EventCode", "bus"]
+__all__ = ["EventBus", "EventCode"]

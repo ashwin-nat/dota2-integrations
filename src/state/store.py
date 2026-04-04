@@ -1,9 +1,10 @@
 from .items import Items, parse_items, MultiChargeItem
-from src.events import bus, EventCode
+from src.events import EventBus, EventCode
 
 
 class GameState:
-    def __init__(self):
+    def __init__(self, bus: EventBus):
+        self._bus = bus
         self._data: dict | None = None
         self._version: int = 0
         self.items: Items | None = None
@@ -19,7 +20,7 @@ class GameState:
         self._version += 1
         self.items = parse_items(data["items"]) if "items" in data else None
         await self._on_update()
-        await bus.emit(EventCode.STATE_UPDATED, state=self)
+        await self._bus.emit(EventCode.STATE_UPDATED, state=self)
 
     def version(self) -> int:
         return self._version
@@ -34,9 +35,9 @@ class GameState:
                 continue
 
             if item.charges == 2 and self._old_midas_charges != 2:
-                await bus.emit(EventCode.MIDAS_OVERCHARGED, slot_id=item.slot_id, charges=item.charges)
+                await self._bus.emit(EventCode.MIDAS_OVERCHARGED, slot_id=item.slot_id, charges=item.charges)
 
             if item.charges == 1 and self._old_midas_charges == 0:
-                await bus.emit(EventCode.MIDAS_CHARGED, slot_id=item.slot_id, charges=item.charges)
+                await self._bus.emit(EventCode.MIDAS_CHARGED, slot_id=item.slot_id, charges=item.charges)
 
             self._old_midas_charges = item.charges
