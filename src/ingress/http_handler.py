@@ -9,6 +9,6 @@ async def handle_gsi(state: GameState, request: web.Request) -> web.Response:
     except Exception:
         return web.Response(status=400, text="Invalid JSON")
 
-    state.set(data)
+    await state.set(data)
 
     return web.Response(text="OK")
