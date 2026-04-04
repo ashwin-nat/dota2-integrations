@@ -33,3 +33,7 @@ class MidasMonitor:
             self._old_charges = item.charges
 
         self._had_midas = found
+
+    def clear(self) -> None:
+        self._old_charges = None
+        self._had_midas = False
