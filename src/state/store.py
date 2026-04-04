@@ -1,4 +1,4 @@
-from .items import Items, parse_items, Item
+from .items import Items, parse_items, BaseItem
 
 
 class GameState:
@@ -28,19 +28,19 @@ class GameState:
     def _on_update(self):
         if not self.items:
             return
-        for _slot_id, item in self.items.items():
-            if not isinstance(item, Item):
+        for item in self.items:
+            if not isinstance(item, BaseItem):
                 continue
 
-            if not item.name != "item_hand_of_midas":
+            if item.name == "item_hand_of_midas":
                 if item.charges == 2 and self._old_midas_charges != 2:
-                    print("Massive Pidas")
+                    print(f"{item.slot_id} | Massive Pidas")
 
                 if item.charges == 1 and self._old_midas_charges == 0:
-                    print("Pidas")
+                    print(f"{item.slot_id} | Pidas")
 
 
-            self._old_midas_charges = item.charges
-            self._old_midas_cd = item.cooldown
-            self._old_midas_charge_cd = item.charge_cooldown
-            self._old_midas_charges = item.charges
+                self._old_midas_charges = item.charges
+                self._old_midas_cd = item.cooldown
+                self._old_midas_charge_cd = item.charge_cooldown
+                self._old_midas_charges = item.charges
