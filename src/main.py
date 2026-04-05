@@ -72,9 +72,16 @@ async def main() -> None:
     sound = SoundManager()
 
     # --- Rule engine setup ---
-    rules_raw = json.loads(RULES_PATH.read_text()) if RULES_PATH.exists() else []
-    rules_config = RulesConfig.from_list(rules_raw)
-    executor = ActionExecutor(sound, lighting)
+    rules_raw = json.loads(RULES_PATH.read_text()) if RULES_PATH.exists() else {}
+    if isinstance(rules_raw, list):
+        rules_config = RulesConfig.from_list(rules_raw)
+    else:
+        rules_config = RulesConfig.from_file(rules_raw)
+    executor = ActionExecutor(
+        sound, lighting,
+        map_colours=rules_config.map_colours,
+        get_map=lambda: state.map,
+    )
     rule_bus = RuleEventBus(executor.execute)
     compiled = compile_rules(rules_config.rules, rule_bus)
     state.set_compiled_rules(compiled)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # --- Actions ---
@@ -31,15 +31,38 @@ class LightAction(Action):
     b: int = Field(ge=0, le=255)
 
 
+class ResetLightAction(Action):
+    """Resets lighting to the map-level day/night colour for the current game time.
+
+    Requires ``map_colours`` to be defined in the top-level rules config.
+    Cannot be used on map-level monitors (those define the baseline colours).
+    """
+    type: Literal["reset_light"]
+
+
 class LoggerAction(Action):
     type: Literal["logger"]
     message: str
 
 
 AnyAction = Annotated[
-    Union[PlaySoundAction, LightAction, LoggerAction],
+    Union[PlaySoundAction, LightAction, ResetLightAction, LoggerAction],
     Field(discriminator="type"),
 ]
+
+
+# --- Map colours ---
+
+class RGB(BaseModel):
+    r: int = Field(ge=0, le=255)
+    g: int = Field(ge=0, le=255)
+    b: int = Field(ge=0, le=255)
+
+
+class MapColours(BaseModel):
+    """Day/night baseline colours used by the reset_light action."""
+    day: RGB
+    night: RGB
 
 
 # --- Monitor configs ---
@@ -93,8 +116,30 @@ class Rule(BaseModel):
 
 # --- Top-level config ---
 
+def _has_reset_light(rules: list[Rule]) -> bool:
+    return any(
+        isinstance(action, ResetLightAction)
+        for rule in rules
+        for action in rule.actions
+    )
+
+
 class RulesConfig(BaseModel):
     rules: list[Rule]
+    map_colours: MapColours | None = None
+
+    @model_validator(mode="after")
+    def reset_light_requires_map_colours(self) -> RulesConfig:
+        if _has_reset_light(self.rules) and self.map_colours is None:
+            raise ValueError(
+                "map_colours must be defined when any rule uses the reset_light action"
+            )
+        return self
+
+    @classmethod
+    def from_file(cls, data: dict) -> RulesConfig:
+        """Parse a JSON object with optional ``map_colours`` and ``rules`` keys."""
+        return cls.model_validate(data)
 
     @classmethod
     def from_list(cls, data: list) -> RulesConfig:
