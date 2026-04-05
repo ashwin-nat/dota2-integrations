@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.rules.config import Action, PlaySoundAction, PrintAction
+from src.rules.config import AnyAction, LightAction, PlaySoundAction
 from src.sound import SoundManager
 
 
@@ -13,9 +13,9 @@ class ActionExecutor:
     def __init__(self, sound: SoundManager) -> None:
         self._sound = sound
 
-    async def execute(self, actions: list[Action]) -> None:
+    async def execute(self, actions: list[AnyAction]) -> None:
         for action in actions:
             if isinstance(action, PlaySoundAction):
                 await self._sound.play(action.file)
-            elif isinstance(action, PrintAction):
-                print(action.message)
+            elif isinstance(action, LightAction):
+                print(f"[light] rgb({action.r}, {action.g}, {action.b})")
