@@ -2,25 +2,23 @@ import asyncio
 
 from aiohttp import web
 
-from src.events import EventBus, EventCode
 
-
-async def handle_gsi(bus: EventBus, request: web.Request) -> web.Response:
+async def handle_gsi(queue: asyncio.Queue, request: web.Request) -> web.Response:
     try:
         data = await request.json()
     except Exception:
         return web.Response(status=400, text="Invalid JSON")
 
-    bus.emit(EventCode.INCOMING_DATA, data=data)
+    queue.put_nowait(data)
 
     return web.Response(text="OK")
 
 
-async def serve(bus: EventBus) -> None:
+async def serve(queue: asyncio.Queue) -> None:
     app = web.Application()
 
     async def _handle(request: web.Request) -> web.Response:
-        return await handle_gsi(bus, request)
+        return await handle_gsi(queue, request)
 
     app.router.add_post("/", _handle)
 

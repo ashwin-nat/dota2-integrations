@@ -14,8 +14,6 @@ LIGHTING_CONFIG_DEFAULTS = {
 
 RULES_PATH = Path("rules.json")
 
-from src.event_listeners import register_listeners
-from src.events import EventBus, EventCode
 from src.ingress.http_server import serve
 from src.lighting.controller import LightingController
 from src.rules import compile_rules, RulesConfig
@@ -67,8 +65,8 @@ async def main() -> None:
     )
     await lighting.connect()
 
-    bus = EventBus()
-    state = GameState(bus)
+    queue: asyncio.Queue[dict] = asyncio.Queue()
+    state = GameState()
     sound = SoundManager()
 
     # --- Rule engine setup ---
@@ -87,16 +85,15 @@ async def main() -> None:
     state.set_compiled_rules(compiled)
     # -------------------------
 
-    @bus.on(EventCode.INCOMING_DATA)
-    async def ingest(data: dict) -> None:
-        await state.set(data)
-
-    register_listeners(bus, lighting, sound)
+    async def ingest() -> None:
+        while True:
+            data = await queue.get()
+            state.set(data)
 
     tasks = [
-        asyncio.create_task(bus.process_forever()),
+        asyncio.create_task(ingest()),
         asyncio.create_task(rule_bus.process_forever()),
-        asyncio.create_task(serve(bus)),
+        asyncio.create_task(serve(queue)),
     ]
 
     await asyncio.gather(*tasks)
