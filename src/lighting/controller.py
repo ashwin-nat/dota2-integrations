@@ -1,3 +1,4 @@
+import colorsys
 from dataclasses import dataclass
 
 from kasa import Discover, Device
@@ -30,6 +31,13 @@ class LightingController:
         if not self._enabled or self._device is None:
             return
         await self._device.set_hsv(hsv.hue, hsv.saturation, hsv.value)
+
+    def rgb_to_hsv(self, r: int, g: int, b: int) -> HSV:
+        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        return HSV(round(h * 360), round(s * 100), round(v * 100))
+
+    async def set_colour_rgb(self, r: int, g: int, b: int) -> None:
+        await self.set_colour(self.rgb_to_hsv(r, g, b))
 
     async def get_hsv(self) -> HSV | None:
         if not self._enabled or self._device is None:

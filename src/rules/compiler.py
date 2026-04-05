@@ -5,14 +5,15 @@ from dataclasses import dataclass, field
 from src.rules.bus import RuleEventBus
 from src.rules.config import ItemMonitorConfig, MapMonitorConfig, Rule
 from src.rules.item_monitors import ITEM_MONITOR_REGISTRY, ItemMonitor
+from src.rules.map_monitor import MapMonitor
 
 
 @dataclass
 class CompiledRules:
     # maps item name → list of monitors to evaluate for that item
     monitors_by_item: dict[str, list[ItemMonitor]] = field(default_factory=dict)
-    # maps event key → (no per-item indexing needed for global monitors)
-    global_event_keys: list[str] = field(default_factory=list)
+    # map monitors evaluated on every update when map state is present
+    map_monitors: list[MapMonitor] = field(default_factory=list)
 
 
 def compile_rules(rules: list[Rule], bus: RuleEventBus) -> CompiledRules:
@@ -28,7 +29,7 @@ def compile_rules(rules: list[Rule], bus: RuleEventBus) -> CompiledRules:
 
         elif isinstance(m, MapMonitorConfig):
             bus.register(m.event_key, rule.actions)
-            compiled.global_event_keys.append(m.event_key)
+            compiled.map_monitors.append(MapMonitor(m.event, m.event_key, bus))
 
         else:
             raise ValueError(f"Unknown monitor type: {m.type!r}")

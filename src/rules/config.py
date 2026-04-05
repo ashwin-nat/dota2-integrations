@@ -31,8 +31,13 @@ class LightAction(Action):
     b: int = Field(ge=0, le=255)
 
 
+class LoggerAction(Action):
+    type: Literal["logger"]
+    message: str
+
+
 AnyAction = Annotated[
-    Union[PlaySoundAction, LightAction],
+    Union[PlaySoundAction, LightAction, LoggerAction],
     Field(discriminator="type"),
 ]
 

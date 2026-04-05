@@ -3,7 +3,7 @@ import asyncio
 from .items import Items, BaseItem, parse_items
 from .map import MapState, parse_map
 from src.events import EventBus, EventCode
-from src.monitors import Monitor, MidasMonitor, DayNightCycleMonitor
+from src.monitors import Monitor, MidasMonitor
 
 
 class GameState:
@@ -23,7 +23,6 @@ class GameState:
 
     def _register_monitors(self) -> None:
         self._monitors.append(MidasMonitor(self._bus))
-        self._monitors.append(DayNightCycleMonitor(self._bus))
 
     def _register_monitor(self, monitor: Monitor) -> None:
         self._monitors.append(monitor)
@@ -64,24 +63,30 @@ class GameState:
             for monitors in self._compiled_rules.monitors_by_item.values():
                 for m in monitors:
                     m.clear()
+            for m in self._compiled_rules.map_monitors:
+                m.clear()
 
     async def _on_update(self) -> None:
         await asyncio.gather(*[monitor.update(self) for monitor in self._monitors])
         self._run_rule_monitors()
 
     def _run_rule_monitors(self) -> None:
-        if not self._compiled_rules or not self.items:
+        if not self._compiled_rules:
             return
 
-        monitors_by_item = self._compiled_rules.monitors_by_item
+        if self.map and self._compiled_rules.map_monitors:
+            for monitor in self._compiled_rules.map_monitors:
+                monitor.evaluate(self.map)
 
-        for item in self.items:
-            monitors = monitors_by_item.get(item.name)
-            if not monitors:
-                continue
-            prev = self._prev_items.get(item.slot_id)
-            for monitor in monitors:
-                monitor.evaluate(item, prev)
+        if self.items:
+            monitors_by_item = self._compiled_rules.monitors_by_item
+            for item in self.items:
+                monitors = monitors_by_item.get(item.name)
+                if not monitors:
+                    continue
+                prev = self._prev_items.get(item.slot_id)
+                for monitor in monitors:
+                    monitor.evaluate(item, prev)
 
-        # Snapshot current items for next update
-        self._prev_items = {item.slot_id: item for item in self.items}
+            # Snapshot current items for next update
+            self._prev_items = {item.slot_id: item for item in self.items}

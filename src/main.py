@@ -74,7 +74,7 @@ async def main() -> None:
     # --- Rule engine setup ---
     rules_raw = json.loads(RULES_PATH.read_text()) if RULES_PATH.exists() else []
     rules_config = RulesConfig.from_list(rules_raw)
-    executor = ActionExecutor(sound)
+    executor = ActionExecutor(sound, lighting)
     rule_bus = RuleEventBus(executor.execute)
     compiled = compile_rules(rules_config.rules, rule_bus)
     state.set_compiled_rules(compiled)
