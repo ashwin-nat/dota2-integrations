@@ -80,9 +80,6 @@ class Items:
     _stash4: BaseItem
     _stash5: BaseItem
 
-    def __bool__(self) -> bool:
-        return any(not isinstance(item, EmptyItem) for item in self)
-
     def __iter__(self) -> Generator[BaseItem, None, None]:
         yield self._slot0
         yield self._slot1

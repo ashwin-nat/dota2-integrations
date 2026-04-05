@@ -32,6 +32,9 @@ class MidasMonitor:
                 self._bus.emit(EventCode.MIDAS_CHARGED, item=item)
             self._old_charges = item.charges
 
+        if self._had_midas and not found:
+            self._old_charges = None
+            self._bus.emit(EventCode.MIDAS_LOST)
         self._had_midas = found
 
     def clear(self) -> None:

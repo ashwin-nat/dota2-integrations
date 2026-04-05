@@ -1,5 +1,4 @@
 import asyncio
-from functools import partial
 
 from aiohttp import web
 
@@ -19,7 +18,11 @@ async def handle_gsi(bus: EventBus, request: web.Request) -> web.Response:
 
 async def serve(bus: EventBus) -> None:
     app = web.Application()
-    app.router.add_post("/", partial(handle_gsi, bus))
+
+    async def _handle(request: web.Request) -> web.Response:
+        return await handle_gsi(bus, request)
+
+    app.router.add_post("/", _handle)
 
     runner = web.AppRunner(app)
     await runner.setup()
