@@ -10,9 +10,7 @@ from src.rules.map_monitor import MapMonitor
 
 @dataclass
 class CompiledRules:
-    # maps item name → list of monitors to evaluate for that item
-    monitors_by_item: dict[str, list[ItemMonitor]] = field(default_factory=dict)
-    # map monitors evaluated on every update when map state is present
+    item_monitors: list[ItemMonitor] = field(default_factory=list)
     map_monitors: list[MapMonitor] = field(default_factory=list)
 
 
@@ -25,12 +23,12 @@ def compile_rules(rules: list[Rule], bus: RuleEventBus) -> CompiledRules:
         if isinstance(m, ItemMonitorConfig):
             bus.register(m.event_key, rule.actions)
             cls = ITEM_MONITOR_REGISTRY[m.event]
-            compiled.monitors_by_item.setdefault(m.target, []).append(cls(m.event_key, bus))
+            compiled.item_monitors.append(cls(m.target, m.event_key, bus))
 
         elif isinstance(m, MidasMonitorConfig):
             bus.register(m.event_key, rule.actions)
             cls = MIDAS_MONITOR_REGISTRY[m.event]
-            compiled.monitors_by_item.setdefault("item_hand_of_midas", []).append(cls(m.event_key, bus))
+            compiled.item_monitors.append(cls("item_hand_of_midas", m.event_key, bus))
 
         elif isinstance(m, MapMonitorConfig):
             bus.register(m.event_key, rule.actions)

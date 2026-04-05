@@ -2,34 +2,48 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src.state.items import BaseItem, EmptyItem, NoChargeItem, SingleChargeItem, MultiChargeItem
+from src.state.items import BaseItem, EmptyItem, NoChargeItem, SingleChargeItem, MultiChargeItem, Items
 
 if TYPE_CHECKING:
     from src.rules.bus import RuleEventBus
 
 
 class ItemMonitor:
-    """Base class for item monitors compiled from rules."""
+    """Base class for item monitors compiled from rules.
 
-    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
+    Each monitor receives the full Items snapshot (current and previous) and
+    is responsible for finding its target item by name across all slots.
+    """
+
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        self._target = target
         self._event_key = event_key
         self._bus = bus
 
-    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
         raise NotImplementedError
 
     def clear(self) -> None:
         pass
 
 
-class CooldownReadyMonitor(ItemMonitor):
-    """Fires when cooldown transitions from > 0 to 0 (item becomes castable)."""
+def _find_item(items: Items, name: str) -> BaseItem | None:
+    """Return the first non-empty slot holding the named item, or None."""
+    for item in items:
+        if not isinstance(item, EmptyItem) and item.name == name:
+            return item
+    return None
 
-    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(event_key, bus)
+
+class CooldownReadyMonitor(ItemMonitor):
+    """Fires when the target item's cooldown transitions from > 0 to 0."""
+
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(target, event_key, bus)
         self._prev_cooldown: int | None = None
 
-    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        curr = _find_item(items, self._target)
         cooldown = _get_cooldown(curr)
         if cooldown is None:
             self._prev_cooldown = None
@@ -43,13 +57,14 @@ class CooldownReadyMonitor(ItemMonitor):
 
 
 class CooldownStartedMonitor(ItemMonitor):
-    """Fires when cooldown transitions from 0 to > 0 (item was used)."""
+    """Fires when the target item's cooldown transitions from 0 to > 0."""
 
-    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(event_key, bus)
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(target, event_key, bus)
         self._prev_cooldown: int | None = None
 
-    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        curr = _find_item(items, self._target)
         cooldown = _get_cooldown(curr)
         if cooldown is None:
             self._prev_cooldown = None
@@ -63,14 +78,17 @@ class CooldownStartedMonitor(ItemMonitor):
 
 
 class ItemAcquiredMonitor(ItemMonitor):
-    """Fires once when the item appears in the slot for the first time."""
+    """Fires once when the target item appears anywhere in the inventory."""
 
-    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(event_key, bus)
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(target, event_key, bus)
         self._seen: bool = False
 
-    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
-        if not self._seen and not isinstance(curr, EmptyItem):
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        found = _find_item(items, self._target) is not None
+        if not found:
+            self._seen = False
+        elif not self._seen:
             self._seen = True
             self._bus.emit(self._event_key)
 
@@ -79,14 +97,14 @@ class ItemAcquiredMonitor(ItemMonitor):
 
 
 class ItemLostMonitor(ItemMonitor):
-    """Fires when the item slot transitions from a named item to empty."""
+    """Fires when the target item disappears from the inventory."""
 
-    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(event_key, bus)
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(target, event_key, bus)
         self._had_item: bool = False
 
-    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
-        has_item = not isinstance(curr, EmptyItem)
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        has_item = _find_item(items, self._target) is not None
         if self._had_item and not has_item:
             self._bus.emit(self._event_key)
         self._had_item = has_item
@@ -98,11 +116,12 @@ class ItemLostMonitor(ItemMonitor):
 class MidasChargedMonitor(ItemMonitor):
     """Fires when Midas gains a charge (0 → 1)."""
 
-    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(event_key, bus)
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(target, event_key, bus)
         self._prev_charges: int | None = None
 
-    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        curr = _find_item(items, self._target)
         if not isinstance(curr, MultiChargeItem):
             self._prev_charges = None
             return
@@ -117,11 +136,12 @@ class MidasChargedMonitor(ItemMonitor):
 class MidasOverchargedMonitor(ItemMonitor):
     """Fires when Midas reaches 2 charges."""
 
-    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(event_key, bus)
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(target, event_key, bus)
         self._prev_charges: int | None = None
 
-    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        curr = _find_item(items, self._target)
         if not isinstance(curr, MultiChargeItem):
             self._prev_charges = None
             return
@@ -147,7 +167,7 @@ MIDAS_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
 }
 
 
-def _get_cooldown(item: BaseItem) -> int | None:
+def _get_cooldown(item: BaseItem | None) -> int | None:
     if isinstance(item, (NoChargeItem, SingleChargeItem, MultiChargeItem)):
         return item.cooldown
     return None

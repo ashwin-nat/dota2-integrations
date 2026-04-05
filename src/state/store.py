@@ -1,6 +1,6 @@
 import asyncio
 
-from .items import Items, BaseItem, parse_items
+from .items import Items, parse_items
 from .map import MapState, parse_map
 from src.events import EventBus, EventCode
 from src.monitors import Monitor
@@ -19,7 +19,7 @@ class GameState:
         # Rule-engine state — populated by set_compiled_rules()
         from src.rules.compiler import CompiledRules
         self._compiled_rules: CompiledRules | None = None
-        self._prev_items: dict[str, BaseItem] = {}  # slot_id → previous item
+        self._prev_items: Items | None = None
 
     def _register_monitors(self) -> None:
         pass
@@ -53,16 +53,15 @@ class GameState:
         new_id = new_map.matchid if new_map else None
         if new_id != old_id:
             self._clear_monitors()
-            self._prev_items.clear()
+            self._prev_items = None
             print(f"Match changed from {old_id} to {new_id}")
 
     def _clear_monitors(self) -> None:
         for monitor in self._monitors:
             monitor.clear()
         if self._compiled_rules:
-            for monitors in self._compiled_rules.monitors_by_item.values():
-                for m in monitors:
-                    m.clear()
+            for m in self._compiled_rules.item_monitors:
+                m.clear()
             for m in self._compiled_rules.map_monitors:
                 m.clear()
 
@@ -74,19 +73,11 @@ class GameState:
         if not self._compiled_rules:
             return
 
-        if self.map and self._compiled_rules.map_monitors:
+        if self.map:
             for monitor in self._compiled_rules.map_monitors:
                 monitor.evaluate(self.map)
 
         if self.items:
-            monitors_by_item = self._compiled_rules.monitors_by_item
-            for item in self.items:
-                monitors = monitors_by_item.get(item.name)
-                if not monitors:
-                    continue
-                prev = self._prev_items.get(item.slot_id)
-                for monitor in monitors:
-                    monitor.evaluate(item, prev)
-
-            # Snapshot current items for next update
-            self._prev_items = {item.slot_id: item for item in self.items}
+            for monitor in self._compiled_rules.item_monitors:
+                monitor.evaluate(self.items, self._prev_items)
+            self._prev_items = self.items
