@@ -12,10 +12,15 @@ LIGHTING_CONFIG_DEFAULTS = {
     "password": "",
 }
 
+RULES_PATH = Path("rules.json")
+
 from src.event_listeners import register_listeners
 from src.events import EventBus, EventCode
 from src.ingress.http_server import serve
 from src.lighting.controller import LightingController
+from src.rules import compile_rules, RulesConfig
+from src.rules.action_executor import ActionExecutor
+from src.rules.bus import RuleEventBus
 from src.sound import SoundManager
 from src.state.store import GameState
 
@@ -66,6 +71,15 @@ async def main() -> None:
     state = GameState(bus)
     sound = SoundManager()
 
+    # --- Rule engine setup ---
+    rules_raw = json.loads(RULES_PATH.read_text()) if RULES_PATH.exists() else []
+    rules_config = RulesConfig.from_list(rules_raw)
+    executor = ActionExecutor(sound)
+    rule_bus = RuleEventBus(executor.execute)
+    compiled = compile_rules(rules_config.rules, rule_bus)
+    state.set_compiled_rules(compiled)
+    # -------------------------
+
     @bus.on(EventCode.INCOMING_DATA)
     async def ingest(data: dict) -> None:
         await state.set(data)
@@ -74,6 +88,7 @@ async def main() -> None:
 
     tasks = [
         asyncio.create_task(bus.process_forever()),
+        asyncio.create_task(rule_bus.process_forever()),
         asyncio.create_task(serve(bus)),
     ]
 

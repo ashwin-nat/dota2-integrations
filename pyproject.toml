@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "aiohttp>=3.13.5",
+    "pydantic>=2.12.5",
     "pygame>=2.6.1",
     "python-kasa>=0.10.2",
 ]
