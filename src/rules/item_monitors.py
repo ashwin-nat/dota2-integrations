@@ -95,12 +95,55 @@ class ItemLostMonitor(ItemMonitor):
         self._had_item = False
 
 
+class MidasChargedMonitor(ItemMonitor):
+    """Fires when Midas gains a charge (0 → 1)."""
+
+    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(event_key, bus)
+        self._prev_charges: int | None = None
+
+    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
+        if not isinstance(curr, MultiChargeItem):
+            self._prev_charges = None
+            return
+        if self._prev_charges is not None and self._prev_charges == 0 and curr.charges == 1:
+            self._bus.emit(self._event_key)
+        self._prev_charges = curr.charges
+
+    def clear(self) -> None:
+        self._prev_charges = None
+
+
+class MidasOverchargedMonitor(ItemMonitor):
+    """Fires when Midas reaches 2 charges."""
+
+    def __init__(self, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(event_key, bus)
+        self._prev_charges: int | None = None
+
+    def evaluate(self, curr: BaseItem, prev: BaseItem | None) -> None:
+        if not isinstance(curr, MultiChargeItem):
+            self._prev_charges = None
+            return
+        if self._prev_charges is not None and self._prev_charges != 2 and curr.charges == 2:
+            self._bus.emit(self._event_key)
+        self._prev_charges = curr.charges
+
+    def clear(self) -> None:
+        self._prev_charges = None
+
+
 # Registry: event name → monitor class
 ITEM_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
     "COOLDOWN_READY": CooldownReadyMonitor,
     "COOLDOWN_STARTED": CooldownStartedMonitor,
     "ITEM_ACQUIRED": ItemAcquiredMonitor,
     "ITEM_LOST": ItemLostMonitor,
+}
+
+MIDAS_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
+    "CHARGED": MidasChargedMonitor,
+    "OVERCHARGED": MidasOverchargedMonitor,
 }
 
 

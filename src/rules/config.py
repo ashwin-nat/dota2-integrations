@@ -58,6 +58,16 @@ class ItemMonitorConfig(MonitorConfig):
         return f"__ITEM__{self.event}__{self.target}__"
 
 
+class MidasMonitorConfig(MonitorConfig):
+    """Monitor for Hand of Midas charge-specific events."""
+    type: Literal["midas"]
+    event: Literal["CHARGED", "OVERCHARGED"]
+
+    @property
+    def event_key(self) -> str:
+        return f"__MIDAS__{self.event}__"
+
+
 class MapMonitorConfig(MonitorConfig):
     type: Literal["map"]
     event: Literal["DAYTIME_STARTED", "NIGHTTIME_STARTED"]
@@ -68,7 +78,7 @@ class MapMonitorConfig(MonitorConfig):
 
 
 AnyMonitor = Annotated[
-    Union[ItemMonitorConfig, MapMonitorConfig],
+    Union[ItemMonitorConfig, MidasMonitorConfig, MapMonitorConfig],
     Field(discriminator="type"),
 ]
 

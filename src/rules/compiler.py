@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from src.rules.bus import RuleEventBus
-from src.rules.config import ItemMonitorConfig, MapMonitorConfig, Rule
-from src.rules.item_monitors import ITEM_MONITOR_REGISTRY, ItemMonitor
+from src.rules.config import ItemMonitorConfig, MidasMonitorConfig, MapMonitorConfig, Rule
+from src.rules.item_monitors import ITEM_MONITOR_REGISTRY, MIDAS_MONITOR_REGISTRY, ItemMonitor
 from src.rules.map_monitor import MapMonitor
 
 
@@ -26,6 +26,11 @@ def compile_rules(rules: list[Rule], bus: RuleEventBus) -> CompiledRules:
             bus.register(m.event_key, rule.actions)
             cls = ITEM_MONITOR_REGISTRY[m.event]
             compiled.monitors_by_item.setdefault(m.target, []).append(cls(m.event_key, bus))
+
+        elif isinstance(m, MidasMonitorConfig):
+            bus.register(m.event_key, rule.actions)
+            cls = MIDAS_MONITOR_REGISTRY[m.event]
+            compiled.monitors_by_item.setdefault("item_hand_of_midas", []).append(cls(m.event_key, bus))
 
         elif isinstance(m, MapMonitorConfig):
             bus.register(m.event_key, rule.actions)

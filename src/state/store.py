@@ -3,7 +3,7 @@ import asyncio
 from .items import Items, BaseItem, parse_items
 from .map import MapState, parse_map
 from src.events import EventBus, EventCode
-from src.monitors import Monitor, MidasMonitor
+from src.monitors import Monitor
 
 
 class GameState:
@@ -22,7 +22,7 @@ class GameState:
         self._prev_items: dict[str, BaseItem] = {}  # slot_id → previous item
 
     def _register_monitors(self) -> None:
-        self._monitors.append(MidasMonitor(self._bus))
+        pass
 
     def _register_monitor(self, monitor: Monitor) -> None:
         self._monitors.append(monitor)
