@@ -114,7 +114,7 @@ class ItemLostMonitor(ItemMonitor):
 
 
 class MidasChargedMonitor(ItemMonitor):
-    """Fires when Midas gains a charge (0 → 1)."""
+    """Fires when Midas transitions to single charge (both 2 -> 1 and 0 -> 1)."""
 
     def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
         super().__init__(target, event_key, bus)
@@ -125,11 +125,12 @@ class MidasChargedMonitor(ItemMonitor):
         if not isinstance(curr, MultiChargeItem):
             self._prev_charges = None
             return
-        if self._prev_charges is not None and self._prev_charges == 0 and curr.charges == 1:
+        if self._prev_charges is not None and self._prev_charges != curr.charges and curr.charges == 1:
             self._bus.emit(self._event_key)
         self._prev_charges = curr.charges
 
     def clear(self) -> None:
+
         self._prev_charges = None
 
 
