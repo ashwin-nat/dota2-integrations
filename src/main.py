@@ -1,36 +1,20 @@
 import asyncio
 import json
-import sys
 from pathlib import Path
 
 # TODO: move these into a top-level config system rather than module-level globals
 LIGHTING_ENABLED = True
 LIGHTING_VENDOR = "tapo"
-LIGHTING_CONFIG_PATH = Path("lighting_config.json")
 
 RULES_PATH = Path("rules.json")
 
 from src.ingress.http_server import serve
-from src.lighting import create_lighting_controller, get_empty_lighting_config
+from src.lighting import load_lighting_controller
 from src.rules import compile_rules, RulesConfig
 from src.rules.action_executor import ActionExecutor
 from src.rules.bus import RuleEventBus
 from src.sound import SoundManager
 from src.state.store import GameState
-
-
-def load_lighting_config() -> dict:
-    if not LIGHTING_CONFIG_PATH.exists():
-        LIGHTING_CONFIG_PATH.write_text(
-            json.dumps(get_empty_lighting_config(LIGHTING_VENDOR), indent=4)
-        )
-        print(
-            f"Lighting config created at '{LIGHTING_CONFIG_PATH}'. "
-            "Please fill in the required fields, then restart."
-        )
-        sys.exit(0)
-
-    return json.loads(LIGHTING_CONFIG_PATH.read_text())
 
 
 def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
@@ -51,8 +35,7 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
 async def main() -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
-    lighting_config = load_lighting_config()
-    lighting = create_lighting_controller(LIGHTING_VENDOR, lighting_config, enabled=LIGHTING_ENABLED)
+    lighting = load_lighting_controller(LIGHTING_VENDOR, enabled=LIGHTING_ENABLED)
     await lighting.setup()
 
     queue: asyncio.Queue[dict] = asyncio.Queue()

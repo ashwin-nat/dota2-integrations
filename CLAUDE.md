@@ -20,7 +20,7 @@ uv run python -m src.main
 
 Listens on `http://127.0.0.1:6969`. Dota 2 sends POST requests to `/`.
 
-Requires `lighting_config.json` (auto-created on first run) and an optional `rules.json` in the project root.
+Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto-created on first run) and an optional `rules.json` in the project root.
 
 ## Project Structure
 
