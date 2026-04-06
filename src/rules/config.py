@@ -110,8 +110,17 @@ class MapMonitorConfig(MonitorConfig):
         return f"__MAP__{self.event}__"
 
 
+class HeroMonitorConfig(MonitorConfig):
+    type: Literal["hero"]
+    event: Literal["HERO_KILLED", "HERO_RESPAWNED"]
+
+    @property
+    def event_key(self) -> str:
+        return f"__HERO__{self.event}__"
+
+
 AnyMonitor = Annotated[
-    Union[ItemMonitorConfig, MidasMonitorConfig, MapMonitorConfig],
+    Union[ItemMonitorConfig, MidasMonitorConfig, MapMonitorConfig, HeroMonitorConfig],
     Field(discriminator="type"),
 ]
 

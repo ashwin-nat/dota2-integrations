@@ -16,6 +16,7 @@ class GameState:
         from src.rules.compiler import CompiledRules
         self._compiled_rules: CompiledRules | None = None
         self._prev_items: Items | None = None
+        self._prev_hero: HeroState | None = None
 
     def set_compiled_rules(self, compiled_rules) -> None:
         """Attach precompiled rule monitors. Called once at startup."""
@@ -27,10 +28,16 @@ class GameState:
         # or controlling lights, monitors must emit an event onto RuleEventBus and
         # let ActionExecutor handle it asynchronously.
         self._version += 1
-        self.items = parse_items(data["items"]) if "items" in data else None
-        self.player = parse_player(data["player"]) if "player" in data else None
-        self.hero = parse_hero(data["hero"]) if "hero" in data else None
-        new_map = parse_map(data["map"]) if "map" in data else None
+
+        items = data.get("items")
+        player = data.get("player")
+        hero = data.get("hero")
+        map = data.get("map")
+
+        self.items = parse_items(items) if items else None
+        self.player = parse_player(player) if player else None
+        self.hero = parse_hero(hero) if hero else None
+        new_map = parse_map(map) if map else None
         self._handle_match_change(new_map)
         self.map = new_map
         self._run_rule_monitors()
@@ -44,6 +51,7 @@ class GameState:
         if new_id != old_id:
             self._clear_monitors()
             self._prev_items = None
+            self._prev_hero = None
             print(f"Match changed from {old_id} to {new_id}")
 
     def _clear_monitors(self) -> None:
@@ -51,6 +59,8 @@ class GameState:
             for m in self._compiled_rules.item_monitors:
                 m.clear()
             for m in self._compiled_rules.map_monitors:
+                m.clear()
+            for m in self._compiled_rules.hero_monitors:
                 m.clear()
 
     def _run_rule_monitors(self) -> None:
@@ -65,3 +75,8 @@ class GameState:
             for monitor in self._compiled_rules.item_monitors:
                 monitor.evaluate(self.items, self._prev_items)
             self._prev_items = self.items
+
+        if self.hero:
+            for monitor in self._compiled_rules.hero_monitors:
+                monitor.evaluate(self.hero)
+            self._prev_hero = self.hero
