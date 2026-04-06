@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# --- Action types ---
+
+class ActionType(StrEnum):
+    PLAY_SOUND  = "play_sound"
+    LIGHT       = "light"
+    RESET_LIGHT = "reset_light"
+    LOGGER      = "logger"
+
+
 # --- Actions ---
 
 class Action(BaseModel):
-    type: str
+    type: ActionType
 
 
 class PlaySoundAction(Action):
-    type: Literal["play_sound"]
+    type: Literal[ActionType.PLAY_SOUND]
     file: str
 
     @field_validator("file")
@@ -25,7 +35,7 @@ class PlaySoundAction(Action):
 
 
 class LightAction(Action):
-    type: Literal["light"]
+    type: Literal[ActionType.LIGHT]
     r: int = Field(ge=0, le=255)
     g: int = Field(ge=0, le=255)
     b: int = Field(ge=0, le=255)
@@ -37,11 +47,11 @@ class ResetLightAction(Action):
     Requires ``map_colours`` to be defined in the top-level rules config.
     Cannot be used on map-level monitors (those define the baseline colours).
     """
-    type: Literal["reset_light"]
+    type: Literal[ActionType.RESET_LIGHT]
 
 
 class LoggerAction(Action):
-    type: Literal["logger"]
+    type: Literal[ActionType.LOGGER]
     message: str
 
 
