@@ -1,3 +1,4 @@
+from .hero import HeroState, parse_hero
 from .items import Items, parse_items
 from .map import MapState, parse_map
 from .player import PlayerState, parse_player
@@ -9,6 +10,7 @@ class GameState:
         self.items: Items | None = None
         self.map: MapState | None = None
         self.player: PlayerState | None = None
+        self.hero: HeroState | None = None
 
         # Rule-engine state — populated by set_compiled_rules()
         from src.rules.compiler import CompiledRules
@@ -27,6 +29,7 @@ class GameState:
         self._version += 1
         self.items = parse_items(data["items"]) if "items" in data else None
         self.player = parse_player(data["player"]) if "player" in data else None
+        self.hero = parse_hero(data["hero"]) if "hero" in data else None
         new_map = parse_map(data["map"]) if "map" in data else None
         self._handle_match_change(new_map)
         self.map = new_map
