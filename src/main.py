@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 
 # TODO: move these into a top-level config system rather than module-level globals
@@ -42,11 +41,7 @@ async def main() -> None:
     state = GameState()
 
     # --- Rule engine setup ---
-    rules_raw = json.loads(RULES_PATH.read_text()) if RULES_PATH.exists() else {}
-    if isinstance(rules_raw, list):
-        rules_config = RulesConfig.from_list(rules_raw)
-    else:
-        rules_config = RulesConfig.from_file(rules_raw)
+    rules_config = RulesConfig.load(RULES_PATH)
     sound = SoundManager(default_volume=rules_config.volume / 100)
     executor = ActionExecutor(
         sound, lighting,

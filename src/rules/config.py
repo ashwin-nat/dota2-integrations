@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Union
@@ -18,11 +19,12 @@ class ActionType(StrEnum):
 
 # --- Actions ---
 
-class Action(BaseModel):
+class BaseAction(BaseModel):
     type: ActionType
+    enabled: bool = True
 
 
-class PlaySoundAction(Action):
+class PlaySoundAction(BaseAction):
     type: Literal[ActionType.PLAY_SOUND]
     file: str
     volume: int = Field(ge=0, le=100, default=100)
@@ -35,14 +37,14 @@ class PlaySoundAction(Action):
         return v
 
 
-class LightAction(Action):
+class LightAction(BaseAction):
     type: Literal[ActionType.LIGHT]
     r: int = Field(ge=0, le=255)
     g: int = Field(ge=0, le=255)
     b: int = Field(ge=0, le=255)
 
 
-class ResetLightAction(Action):
+class ResetLightAction(BaseAction):
     """Resets lighting to the map-level day/night colour for the current game time.
 
     Requires ``map_colours`` to be defined in the top-level rules config.
@@ -51,7 +53,7 @@ class ResetLightAction(Action):
     type: Literal[ActionType.RESET_LIGHT]
 
 
-class LoggerAction(Action):
+class LoggerAction(BaseAction):
     type: Literal[ActionType.LOGGER]
     message: str
 
@@ -141,11 +143,12 @@ def _has_reset_light(rules: list[Rule]) -> bool:
         isinstance(action, ResetLightAction)
         for rule in rules
         for action in rule.actions
+        if action.enabled
     )
 
 
 class RulesConfig(BaseModel):
-    rules: list[Rule]
+    rules: list[Rule] = Field(default_factory=list)
     map_colours: MapColours | None = None
     volume: int = Field(ge=0, le=100, default=100)
 
@@ -158,11 +161,16 @@ class RulesConfig(BaseModel):
         return self
 
     @classmethod
-    def from_file(cls, data: dict) -> RulesConfig:
-        """Parse a JSON object with optional ``map_colours`` and ``rules`` keys."""
-        return cls.model_validate(data)
-
-    @classmethod
-    def from_list(cls, data: list) -> RulesConfig:
-        """Parse a JSON array (the root-level format) into a RulesConfig."""
-        return cls.model_validate({"rules": data})
+    def load(cls, path: Path) -> RulesConfig:
+        """Load and parse rules.json, writing back any missing keys with their defaults."""
+        if not path.exists():
+            config = cls()
+            path.write_text(config.model_dump_json(indent=4))
+            return config
+        data = json.loads(path.read_text())
+        config = cls.model_validate(data)
+        missing = {k: v for k, v in config.model_dump().items() if k not in data}
+        if missing:
+            data.update(missing)
+            path.write_text(json.dumps(data, indent=4))
+        return config

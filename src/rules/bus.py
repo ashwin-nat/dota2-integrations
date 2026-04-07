@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Coroutine
 
-from src.rules.config import Action
+from src.rules.config import AnyAction
 
-ActionExecutorFn = Callable[[list[Action]], Coroutine[Any, Any, None]]
+ActionExecutorFn = Callable[[list[AnyAction]], Coroutine[Any, Any, None]]
 
 
 class RuleEventBus:
@@ -17,11 +17,11 @@ class RuleEventBus:
     """
 
     def __init__(self, executor: ActionExecutorFn) -> None:
-        self._listeners: dict[str, list[Action]] = {}
+        self._listeners: dict[str, list[AnyAction]] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._executor = executor
 
-    def register(self, event_key: str, actions: list[Action]) -> None:
+    def register(self, event_key: str, actions: list[AnyAction]) -> None:
         """Called at compile time only — never at runtime."""
         self._listeners.setdefault(event_key, []).extend(actions)
 
