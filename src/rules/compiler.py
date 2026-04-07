@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from src.rules.bus import RuleEventBus
-from src.rules.config import AnyAction, ItemMonitorConfig, MidasMonitorConfig, MapMonitorConfig, HeroMonitorConfig, ResetLightAction, Rule
-from src.rules.item_monitors import ITEM_MONITOR_REGISTRY, MIDAS_MONITOR_REGISTRY, ItemMonitor
+from src.rules.config import AnyAction, ItemMonitorConfig, MidasMonitorConfig, BlinkMonitorConfig, MapMonitorConfig, HeroMonitorConfig, ResetLightAction, Rule
+from src.rules.item_monitors import ITEM_MONITOR_REGISTRY, MIDAS_MONITOR_REGISTRY, BLINK_MONITOR_REGISTRY, ITEM_SPECIFIC_REGISTRIES, ItemMonitor
 from src.rules.map_monitor import MapMonitor
 from src.rules.hero_monitor import HeroMonitor
 
@@ -30,7 +30,8 @@ def compile_rules(rules: list[Rule], bus: RuleEventBus) -> CompiledRules:
         if isinstance(m, ItemMonitorConfig):
             if actions:
                 bus.register(m.event_key, actions)
-                cls = ITEM_MONITOR_REGISTRY[m.event]
+                registry = ITEM_SPECIFIC_REGISTRIES.get(m.target, ITEM_MONITOR_REGISTRY)
+                cls = registry[m.event]
                 compiled.item_monitors.append(cls(m.target, m.event_key, bus))
 
         elif isinstance(m, MidasMonitorConfig):
@@ -38,6 +39,12 @@ def compile_rules(rules: list[Rule], bus: RuleEventBus) -> CompiledRules:
                 bus.register(m.event_key, actions)
                 cls = MIDAS_MONITOR_REGISTRY[m.event]
                 compiled.item_monitors.append(cls("item_hand_of_midas", m.event_key, bus))
+
+        elif isinstance(m, BlinkMonitorConfig):
+            if actions:
+                bus.register(m.event_key, actions)
+                cls = BLINK_MONITOR_REGISTRY[m.event]
+                compiled.item_monitors.append(cls("item_blink", m.event_key, bus))
 
         elif isinstance(m, MapMonitorConfig):
             for action in actions:

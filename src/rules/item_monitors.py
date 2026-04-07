@@ -172,6 +172,35 @@ MIDAS_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
 }
 
 
+class BlinkCooldownStartedMonitor(CooldownStartedMonitor):
+    """Fires when Blink Dagger is used (cooldown 0 → >0), ignoring cancel-penalty cooldowns (max_cooldown==4)."""
+
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        curr = _find_item(items, self._target)
+        cooldown = _get_cooldown(curr)
+        if cooldown is None:
+            self._prev_cooldown = None
+            return
+        # When the player gets hit, blink gets cancelled for 3 sec (game for whatever reason reprots it as 4)
+        cancelled = isinstance(curr, (NoChargeItem, SingleChargeItem, MultiChargeItem)) and curr.max_cooldown == 4
+        if not cancelled and self._prev_cooldown == 0 and cooldown > 0:
+            self._bus.emit(self._event_key)
+        self._prev_cooldown = cooldown
+
+BLINK_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
+    "COOLDOWN_READY": CooldownReadyMonitor,
+    "COOLDOWN_STARTED": BlinkCooldownStartedMonitor,
+    "ITEM_ACQUIRED": ItemAcquiredMonitor,
+    "ITEM_LOST": ItemLostMonitor,
+}
+
+# Maps item names that have a dedicated registry to that registry.
+# Items not listed here fall back to ITEM_MONITOR_REGISTRY.
+ITEM_SPECIFIC_REGISTRIES: dict[str, dict[str, type[ItemMonitor]]] = {
+    "item_blink": BLINK_MONITOR_REGISTRY,
+}
+
+
 def _get_cooldown(item: BaseItem | None) -> int | None:
     if isinstance(item, (NoChargeItem, SingleChargeItem, MultiChargeItem)):
         return item.cooldown

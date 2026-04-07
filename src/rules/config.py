@@ -104,6 +104,16 @@ class MidasMonitorConfig(MonitorConfig):
         return f"__MIDAS__{self.event}__"
 
 
+class BlinkMonitorConfig(MonitorConfig):
+    """Monitor for Blink Dagger item events."""
+    type: Literal["blink"]
+    event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
+
+    @property
+    def event_key(self) -> str:
+        return f"__BLINK__{self.event}__"
+
+
 class MapMonitorConfig(MonitorConfig):
     type: Literal["map"]
     event: Literal["DAYTIME_STARTED", "NIGHTTIME_STARTED", "PAUSED", "UNPAUSED"]
@@ -123,7 +133,7 @@ class HeroMonitorConfig(MonitorConfig):
 
 
 AnyMonitor = Annotated[
-    Union[ItemMonitorConfig, MidasMonitorConfig, MapMonitorConfig, HeroMonitorConfig],
+    Union[ItemMonitorConfig, MidasMonitorConfig, BlinkMonitorConfig, MapMonitorConfig, HeroMonitorConfig],
     Field(discriminator="type"),
 ]
 
