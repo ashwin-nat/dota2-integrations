@@ -69,7 +69,11 @@ class CooldownStartedMonitor(ItemMonitor):
         if cooldown is None:
             self._prev_cooldown = None
             return
-        if self._prev_cooldown is not None and self._prev_cooldown == 0 and cooldown > 0:
+        assert isinstance(curr, (NoChargeItem, SingleChargeItem, MultiChargeItem))
+        max_cd = curr.max_cooldown - 1 # Game seems to report max cooldown as 1 higher than actual for some reason
+        if self._prev_cooldown is not None and self._prev_cooldown == 0 and cooldown == max_cd:
+            print(f"Emitting {self._event_key} because cooldown started (was {self._prev_cooldown}, now {cooldown})")
+            print(f"Item state: {curr}")
             self._bus.emit(self._event_key)
         self._prev_cooldown = cooldown
 
