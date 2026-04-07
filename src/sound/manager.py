@@ -15,11 +15,11 @@ class SoundManager:
         self._loading: Dict[str, asyncio.Future[pygame.mixer.Sound]] = {}
         self._loop = asyncio.get_event_loop()
 
-    async def play(self, path: str, *, volume: float | None = None) -> None:
+    async def play(self, path: str, *, volume: float = 1.0) -> None:
         sound = await self._load(path)
         channel = sound.play()
         if channel is not None:
-            channel.set_volume(volume if volume is not None else self._default_volume)
+            channel.set_volume(volume * self._default_volume)
 
     async def _load(self, path: str) -> pygame.mixer.Sound:
         if path in self._cache:

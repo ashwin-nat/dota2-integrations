@@ -40,7 +40,6 @@ async def main() -> None:
 
     queue: asyncio.Queue[dict] = asyncio.Queue()
     state = GameState()
-    sound = SoundManager()
 
     # --- Rule engine setup ---
     rules_raw = json.loads(RULES_PATH.read_text()) if RULES_PATH.exists() else {}
@@ -48,6 +47,7 @@ async def main() -> None:
         rules_config = RulesConfig.from_list(rules_raw)
     else:
         rules_config = RulesConfig.from_file(rules_raw)
+    sound = SoundManager(default_volume=rules_config.volume / 100)
     executor = ActionExecutor(
         sound, lighting,
         map_colours=rules_config.map_colours,

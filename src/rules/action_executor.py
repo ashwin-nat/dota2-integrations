@@ -47,7 +47,7 @@ class ActionExecutor:
             await self._dispatch[action.type](action)
 
     async def _execute_play_sound(self, action: PlaySoundAction) -> None:
-        await self._sound.play(action.file)
+        await self._sound.play(action.file, volume=action.volume / 100)
 
     async def _execute_light(self, action: LightAction) -> None:
         await self._lighting.set_colour_rgb(action.r, action.g, action.b)

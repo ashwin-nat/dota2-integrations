@@ -25,6 +25,7 @@ class Action(BaseModel):
 class PlaySoundAction(Action):
     type: Literal[ActionType.PLAY_SOUND]
     file: str
+    volume: int = Field(ge=0, le=100, default=100)
 
     @field_validator("file")
     @classmethod
@@ -146,6 +147,7 @@ def _has_reset_light(rules: list[Rule]) -> bool:
 class RulesConfig(BaseModel):
     rules: list[Rule]
     map_colours: MapColours | None = None
+    volume: int = Field(ge=0, le=100, default=100)
 
     @model_validator(mode="after")
     def reset_light_requires_map_colours(self) -> RulesConfig:
