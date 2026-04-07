@@ -34,6 +34,14 @@ class GameState:
         hero = data.get("hero")
         map = data.get("map")
 
+        if not map:
+            return
+
+        game_state = map.get("game_state")
+        if game_state != "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS":
+            print(f"Ignoring update: game state is {game_state}")
+            return
+
         self.items = parse_items(items) if items else None
         self.player = parse_player(player) if player else None
         self.hero = parse_hero(hero) if hero else None
