@@ -56,6 +56,8 @@ async def main() -> None:
     rule_bus = RuleEventBus(executor.execute)
     compiled = compile_rules(rules_config.rules, rule_bus)
     state.set_compiled_rules(compiled)
+    n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
+    print(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero), {len(executor._dispatch)} executor dispatch handlers")
     # -------------------------
 
     async def ingest() -> None:
