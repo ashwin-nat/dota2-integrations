@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 class MapMonitor:
     """Watches map state transitions and emits rule-bus events.
 
-    Each instance handles one event type (DAYTIME_STARTED or NIGHTTIME_STARTED).
+    Each instance handles one map-level event type.
     """
 
     def __init__(self, event: str, event_key: str, bus: RuleEventBus) -> None:
@@ -18,25 +18,38 @@ class MapMonitor:
         self._event_key = event_key
         self._bus = bus
         self._prev_daytime: bool | None = None
+        self._prev_paused: bool | None = None
 
     def evaluate(self, map_state: MapState) -> None:
         daytime = map_state.daytime
+        paused = map_state.paused
 
-        if self._prev_daytime is None:
-            # First tick — emit initial state
+        if self._prev_daytime is None or self._prev_paused is None:
+            # First tick — emit initial state for the selected event
             self._prev_daytime = daytime
-            self._maybe_emit(daytime, is_initial=True)
+            self._prev_paused = paused
+            self._maybe_emit(daytime, paused, is_initial=True)
             return
 
-        if self._prev_daytime != daytime:
-            self._prev_daytime = daytime
-            self._maybe_emit(daytime, is_initial=False)
+        if self._event in {"DAYTIME_STARTED", "NIGHTTIME_STARTED"}:
+            if self._prev_daytime != daytime:
+                self._prev_daytime = daytime
+                self._maybe_emit(daytime, paused, is_initial=False)
+        elif self._event in {"PAUSED", "UNPAUSED"}:
+            if self._prev_paused != paused:
+                self._prev_paused = paused
+                self._maybe_emit(daytime, paused, is_initial=False)
 
-    def _maybe_emit(self, daytime: bool, is_initial: bool) -> None:
+    def _maybe_emit(self, daytime: bool, paused: bool, is_initial: bool) -> None:
         if self._event == "DAYTIME_STARTED" and daytime:
             self._bus.emit(self._event_key)
         elif self._event == "NIGHTTIME_STARTED" and not daytime:
             self._bus.emit(self._event_key)
+        elif self._event == "PAUSED" and paused:
+            self._bus.emit(self._event_key)
+        elif self._event == "UNPAUSED" and not paused:
+            self._bus.emit(self._event_key)
 
     def clear(self) -> None:
         self._prev_daytime = None
+        self._prev_paused = None

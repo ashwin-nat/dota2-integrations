@@ -103,7 +103,7 @@ class MidasMonitorConfig(MonitorConfig):
 
 class MapMonitorConfig(MonitorConfig):
     type: Literal["map"]
-    event: Literal["DAYTIME_STARTED", "NIGHTTIME_STARTED"]
+    event: Literal["DAYTIME_STARTED", "NIGHTTIME_STARTED", "PAUSED", "UNPAUSED"]
 
     @property
     def event_key(self) -> str:
