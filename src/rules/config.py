@@ -17,6 +17,23 @@ class ActionType(StrEnum):
     LOGGER      = "logger"
 
 
+# --- Sound config ---
+
+class SoundConfig(BaseModel):
+    volume: int = Field(ge=0, le=100, default=100)
+
+
+# --- Lighting config ---
+
+class LightingVendor(StrEnum):
+    TAPO = "tapo"
+
+
+class LightingConfig(BaseModel):
+    enabled: bool = True
+    vendor: LightingVendor = LightingVendor.TAPO
+
+
 # --- Actions ---
 
 class BaseAction(BaseModel):
@@ -160,7 +177,8 @@ def _has_reset_light(rules: list[Rule]) -> bool:
 class RulesConfig(BaseModel):
     rules: list[Rule] = Field(default_factory=list)
     map_colours: MapColours | None = None
-    volume: int = Field(ge=0, le=100, default=100)
+    sound: SoundConfig = Field(default_factory=SoundConfig)
+    lighting: LightingConfig = Field(default_factory=LightingConfig)
 
     @model_validator(mode="after")
     def reset_light_requires_map_colours(self) -> RulesConfig:
@@ -177,10 +195,10 @@ class RulesConfig(BaseModel):
             config = cls()
             path.write_text(config.model_dump_json(indent=4))
             return config
-        data = json.loads(path.read_text())
+        raw = path.read_text()
+        data = json.loads(raw)
         config = cls.model_validate(data)
-        missing = {k: v for k, v in config.model_dump().items() if k not in data}
-        if missing:
-            data.update(missing)
-            path.write_text(json.dumps(data, indent=4))
+        dumped = config.model_dump()
+        if dumped != data:
+            path.write_text(json.dumps(dumped, indent=4))
         return config

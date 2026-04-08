@@ -4,13 +4,14 @@ from pathlib import Path
 
 from src.lighting.controller import LightingController
 from src.lighting.drivers.tapo import TapoLightingDriver
+from src.rules.config import LightingVendor
 
-_VENDOR_DRIVERS: dict[str, type[LightingController]] = {
-    "tapo": TapoLightingDriver,
+_VENDOR_DRIVERS: dict[LightingVendor, type[LightingController]] = {
+    LightingVendor.TAPO: TapoLightingDriver,
 }
 
 
-def load_lighting_controller(vendor: str, enabled: bool) -> LightingController:
+def load_lighting_controller(vendor: LightingVendor, enabled: bool) -> LightingController:
     driver_cls = _VENDOR_DRIVERS[vendor]
     config_path = Path(f"lighting_config_{vendor}.json")
 

@@ -1,10 +1,6 @@
 import asyncio
 from pathlib import Path
 
-# TODO: move these into a top-level config system rather than module-level globals
-LIGHTING_ENABLED = True
-LIGHTING_VENDOR = "tapo"
-
 RULES_PATH = Path("rules.json")
 
 from src.ingress.http_server import serve
@@ -34,15 +30,15 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
 async def main() -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
-    lighting = load_lighting_controller(LIGHTING_VENDOR, enabled=LIGHTING_ENABLED)
+    rules_config = RulesConfig.load(RULES_PATH)
+    lighting = load_lighting_controller(rules_config.lighting.vendor, enabled=rules_config.lighting.enabled)
     await lighting.setup()
 
     queue: asyncio.Queue[dict] = asyncio.Queue()
     state = GameState()
 
     # --- Rule engine setup ---
-    rules_config = RulesConfig.load(RULES_PATH)
-    sound = SoundManager(default_volume=rules_config.volume / 100)
+    sound = SoundManager(default_volume=rules_config.sound.volume / 100)
     executor = ActionExecutor(
         sound, lighting,
         map_colours=rules_config.map_colours,
