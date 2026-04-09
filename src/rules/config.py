@@ -30,7 +30,7 @@ class LightingVendor(StrEnum):
 
 
 class LightingConfig(BaseModel):
-    enabled: bool = True
+    enabled: bool = False
     vendor: LightingVendor = LightingVendor.TAPO
 
 
