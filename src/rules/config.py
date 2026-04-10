@@ -4,6 +4,7 @@ import json
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Union
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -15,6 +16,15 @@ class ActionType(StrEnum):
     LIGHT       = "light"
     RESET_LIGHT = "reset_light"
     LOGGER      = "logger"
+    WEBHOOK     = "webhook"
+
+
+class MonitorType(StrEnum):
+    ITEM  = "item"
+    MIDAS = "midas"
+    BLINK = "blink"
+    MAP   = "map"
+    HERO  = "hero"
 
 
 # --- Sound config ---
@@ -75,8 +85,31 @@ class LoggerAction(BaseAction):
     message: str
 
 
+class WebhookAction(BaseAction):
+    type: Literal[ActionType.WEBHOOK]
+    url: str
+    api_key: str | None = None
+    auth_type: Literal["bearer", "header", "query"] | None = None
+    timeout: float = Field(default=2.0, gt=0)
+    cooldown: float = Field(default=0.0, ge=0)
+
+    @field_validator("url")
+    @classmethod
+    def url_must_be_http(cls, v: str) -> str:
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(f"url must be a valid HTTP/HTTPS URL, got: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def api_key_requires_auth_type(self) -> WebhookAction:
+        if self.api_key is not None and self.auth_type is None:
+            raise ValueError("auth_type must be provided when api_key is set")
+        return self
+
+
 AnyAction = Annotated[
-    Union[PlaySoundAction, LightAction, ResetLightAction, LoggerAction],
+    Union[PlaySoundAction, LightAction, ResetLightAction, LoggerAction, WebhookAction],
     Field(discriminator="type"),
 ]
 
@@ -98,11 +131,11 @@ class MapColours(BaseModel):
 # --- Monitor configs ---
 
 class MonitorConfig(BaseModel):
-    type: str
+    type: MonitorType
 
 
 class ItemMonitorConfig(MonitorConfig):
-    type: Literal["item"]
+    type: Literal[MonitorType.ITEM]
     target: str
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
 
@@ -113,7 +146,7 @@ class ItemMonitorConfig(MonitorConfig):
 
 class MidasMonitorConfig(MonitorConfig):
     """Monitor for Hand of Midas charge-specific events."""
-    type: Literal["midas"]
+    type: Literal[MonitorType.MIDAS]
     event: Literal["CHARGED", "OVERCHARGED"]
 
     @property
@@ -123,7 +156,7 @@ class MidasMonitorConfig(MonitorConfig):
 
 class BlinkMonitorConfig(MonitorConfig):
     """Monitor for Blink Dagger item events."""
-    type: Literal["blink"]
+    type: Literal[MonitorType.BLINK]
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
 
     @property
@@ -132,7 +165,7 @@ class BlinkMonitorConfig(MonitorConfig):
 
 
 class MapMonitorConfig(MonitorConfig):
-    type: Literal["map"]
+    type: Literal[MonitorType.MAP]
     event: Literal["DAYTIME_STARTED", "NIGHTTIME_STARTED", "PAUSED", "UNPAUSED"]
 
     @property
@@ -141,7 +174,7 @@ class MapMonitorConfig(MonitorConfig):
 
 
 class HeroMonitorConfig(MonitorConfig):
-    type: Literal["hero"]
+    type: Literal[MonitorType.HERO]
     event: Literal["HERO_KILLED", "HERO_RESPAWNED"]
 
     @property
