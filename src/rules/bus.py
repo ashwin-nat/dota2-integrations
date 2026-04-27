@@ -2,9 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
+from typing import Any
 
-from src.rules.config import AnyAction, MonitorType
+from src.rules.config import ActionType, AnyAction, MonitorType
+
+# Action types that share the lighting queue
+_LIGHT_TYPES = {ActionType.LIGHT, ActionType.RESET_LIGHT}
+
+# Canonical queue key for each action type
+def _queue_key(action_type: ActionType) -> ActionType:
+    if action_type in _LIGHT_TYPES:
+        return ActionType.LIGHT
+    return action_type
 
 
 @dataclass
@@ -16,22 +25,29 @@ class EventContext:
     data: dict[str, Any] = field(default_factory=dict)
 
 
-ActionExecutorFn = Callable[[list[AnyAction], EventContext], Coroutine[Any, Any, None]]
+# Items placed on per-type queues
+@dataclass
+class QueuedAction:
+    action: AnyAction
+    ctx: EventContext
 
 
 class RuleEventBus:
-    """Minimal async event bus for rule-compiled string-key events.
+    """Async event bus with one queue per action type.
 
-    Events are plain strings (e.g. "ITEM.COOLDOWN_READY.item_blink").
-    Listeners are precompiled lists of typed Action models.
-    No routing logic, no enums, no filtering at runtime.
+    On emit, each action in the rule is routed to its type's queue.
+    reset_light shares the light queue (same subsystem, must stay serial).
     """
 
-    def __init__(self, executor: ActionExecutorFn) -> None:
+    # The four independent action queues
+    QUEUE_KEYS = (ActionType.PLAY_SOUND, ActionType.LIGHT, ActionType.LOGGER, ActionType.WEBHOOK)
+
+    def __init__(self) -> None:
         self._listeners: dict[str, list[AnyAction]] = {}
         self._contexts: dict[str, EventContext] = {}
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
-        self._executor = executor
+        self._queues: dict[ActionType, asyncio.Queue[QueuedAction]] = {
+            key: asyncio.Queue() for key in self.QUEUE_KEYS
+        }
 
     def register(self, event_key: str, actions: list[AnyAction], context: EventContext) -> None:
         """Called at compile time only — never at runtime."""
@@ -39,14 +55,16 @@ class RuleEventBus:
         self._contexts[event_key] = context
 
     def emit(self, event_key: str) -> None:
-        """Non-blocking: queue the event for async dispatch."""
-        self._queue.put_nowait(event_key)
+        """Non-blocking: fan out each enabled action to its type queue."""
+        actions = self._listeners.get(event_key, [])
+        ctx = self._contexts.get(event_key)
+        if not actions or ctx is None:
+            return
+        for action in actions:
+            if not action.enabled:
+                continue
+            q = self._queues[_queue_key(action.type)]
+            q.put_nowait(QueuedAction(action=action, ctx=ctx))
 
-    async def process_forever(self) -> None:
-        while True:
-            event_key = await self._queue.get()
-            actions = self._listeners.get(event_key, [])
-            ctx = self._contexts.get(event_key)
-            if actions and ctx is not None:
-                await self._executor(actions, ctx)
-            self._queue.task_done()
+    def queue_for(self, key: ActionType) -> asyncio.Queue[QueuedAction]:
+        return self._queues[key]

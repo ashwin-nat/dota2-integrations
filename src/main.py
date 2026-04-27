@@ -44,11 +44,11 @@ async def main() -> None:
         map_colours=rules_config.map_colours,
         get_map=lambda: state.map,
     )
-    rule_bus = RuleEventBus(executor.execute)
+    rule_bus = RuleEventBus()
     compiled = compile_rules(rules_config.rules, rule_bus)
     state.set_compiled_rules(compiled)
     n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
-    print(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero), {len(executor._dispatch)} executor dispatch handlers")
+    print(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
     # -------------------------
 
     async def ingest() -> None:
@@ -57,11 +57,16 @@ async def main() -> None:
             state.set(data)
 
     tasks = [
-        asyncio.create_task(ingest()),
-        asyncio.create_task(rule_bus.process_forever()),
-        asyncio.create_task(serve(queue)),
+        asyncio.create_task(ingest(), name="ingest"),
+        *[
+            asyncio.create_task(coro, name=name)
+            for name, coro in executor.worker_coroutines(rule_bus).items()
+        ],
+        asyncio.create_task(serve(queue), name="http_server"),
     ]
 
+    for task in tasks:
+        print(f"Registered task: {task.get_name()}")
     await asyncio.gather(*tasks)
 
 

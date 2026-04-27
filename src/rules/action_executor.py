@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qs
 
 import aiohttp
 
 from src.lighting.controller import LightingController
-from src.rules.bus import EventContext
+from src.rules.bus import EventContext, QueuedAction, RuleEventBus
 from src.rules.config import (
     ActionType,
     AnyAction,
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class ActionExecutor:
-    """Dispatches typed Action models to the appropriate subsystems.
+    """One worker coroutine per action type, each draining its own queue.
 
     Params are validated at config load — no validation here.
     """
@@ -44,23 +44,36 @@ class ActionExecutor:
         self._lighting = lighting
         self._map_colours = map_colours
         self._get_map = get_map
-        self._webhook_last_fired: dict[int, float] = {}  # id(action) → last fire time
+        self._webhook_last_fired: dict[int, float] = {}
         self._webhook_tasks: set[asyncio.Task[None]] = set()
 
-        self._dispatch = {
-            ActionType.PLAY_SOUND:  self._execute_play_sound,
-            ActionType.LIGHT:       self._execute_light,
-            ActionType.RESET_LIGHT: self._execute_reset_light,
-            ActionType.LOGGER:      self._execute_logger,
-            ActionType.WEBHOOK:     self._execute_webhook,
+    def worker_coroutines(self, bus: RuleEventBus) -> dict[str, Any]:
+        """Return one named coroutine per action type queue."""
+        return {
+            "action_logger":  self._drain(bus.queue_for(ActionType.LOGGER)),
+            "action_sound":   self._drain(bus.queue_for(ActionType.PLAY_SOUND)),
+            "action_light":   self._drain(bus.queue_for(ActionType.LIGHT)),
+            "action_webhook": self._drain(bus.queue_for(ActionType.WEBHOOK)),
         }
 
-    async def execute(self, actions: list[AnyAction], ctx: EventContext) -> None:
-        for action in actions:
-            if action.type == ActionType.WEBHOOK:
-                await self._execute_webhook(action, ctx)  # type: ignore[arg-type]
-            else:
-                await self._dispatch[action.type](action)  # type: ignore[arg-type]
+    async def _drain(self, queue: asyncio.Queue[QueuedAction]) -> None:
+        while True:
+            item = await queue.get()
+            if item.action.enabled:
+                await self._dispatch(item.action, item.ctx)
+            queue.task_done()
+
+    async def _dispatch(self, action: AnyAction, ctx: EventContext) -> None:
+        if action.type == ActionType.PLAY_SOUND:
+            await self._execute_play_sound(action)  # type: ignore[arg-type]
+        elif action.type == ActionType.LIGHT:
+            await self._execute_light(action)  # type: ignore[arg-type]
+        elif action.type == ActionType.RESET_LIGHT:
+            await self._execute_reset_light()
+        elif action.type == ActionType.LOGGER:
+            await self._execute_logger(action)  # type: ignore[arg-type]
+        elif action.type == ActionType.WEBHOOK:
+            await self._execute_webhook(action, ctx)  # type: ignore[arg-type]
 
     async def _execute_play_sound(self, action: PlaySoundAction) -> None:
         await self._sound.play(action.file, volume=action.volume / 100)
@@ -68,7 +81,7 @@ class ActionExecutor:
     async def _execute_light(self, action: LightAction) -> None:
         await self._lighting.set_colour_rgb(action.r, action.g, action.b)
 
-    async def _execute_reset_light(self, _action: AnyAction) -> None:
+    async def _execute_reset_light(self) -> None:
         if self._map_colours is None or self._get_map is None:
             return
         map_state = self._get_map()
