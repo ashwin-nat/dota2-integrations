@@ -9,4 +9,5 @@ dependencies = [
     "pydantic>=2.12.5",
     "pygame>=2.6.1",
     "python-kasa>=0.10.2",
+    "tinytuya>=1.15.0",
 ]

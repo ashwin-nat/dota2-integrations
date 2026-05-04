@@ -4,10 +4,12 @@ from pathlib import Path
 
 from src.lighting.controller import LightingController
 from src.lighting.drivers.tapo import TapoLightingDriver
+from src.lighting.drivers.tuya import TuyaLightingDriver
 from src.rules.config import LightingVendor
 
 _VENDOR_DRIVERS: dict[LightingVendor, type[LightingController]] = {
     LightingVendor.TAPO: TapoLightingDriver,
+    LightingVendor.TUYA: TuyaLightingDriver,
 }
 
 

@@ -37,6 +37,7 @@ class SoundConfig(BaseModel):
 
 class LightingVendor(StrEnum):
     TAPO = "tapo"
+    TUYA = "tuya"
 
 
 class LightingConfig(BaseModel):
