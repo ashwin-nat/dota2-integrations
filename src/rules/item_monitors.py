@@ -187,10 +187,61 @@ BLINK_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
     "ITEM_LOST": ItemLostMonitor,
 }
 
+# GSI does not report the BKB buff, so approximate it as the first N seconds of the cooldown.
+BKB_BUFF_SECONDS = 10
+
+
+class BkbCooldownStartedMonitor(CooldownStartedMonitor):
+    """Active for the BKB buff window after use, not the whole cooldown.
+
+    Since the incoming data does not contain buff info,
+    The buff window is measured on the item's own cooldown (which counts down in game
+    time, so pausing is respected) and ends early if the item is lost.
+    """
+
+    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(target, event_key, bus)
+        self._start_cooldown: int = 0
+
+    def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:
+        # Any jump up to a full cooldown is a new use, including a refresh + reuse
+        # landing in one update (cooldown never read as 0). While the window is
+        # running this restarts it.
+        max_cd = curr.max_cooldown - 1
+        return self._prev_cooldown is not None and cooldown > self._prev_cooldown and cooldown == max_cd
+
+    def evaluate(self, items: Items, prev_items: Items | None) -> None:
+        curr = _find_item(items, self._target)
+        cooldown = _get_cooldown(curr)
+        if cooldown is None:
+            self._prev_cooldown = None
+            self._end()
+            return
+        assert isinstance(curr, (NoChargeItem, SingleChargeItem, MultiChargeItem))
+        if self._started(curr, cooldown):
+            self._start_cooldown = cooldown
+            self._fire()
+        elif self._active and (cooldown == 0 or self._start_cooldown - cooldown >= BKB_BUFF_SECONDS):
+            self._end()
+        self._prev_cooldown = cooldown
+
+    def clear(self) -> None:
+        super().clear()
+        self._start_cooldown = 0
+
+
+BKB_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
+    "COOLDOWN_READY": CooldownReadyMonitor,
+    "COOLDOWN_STARTED": BkbCooldownStartedMonitor,
+    "ITEM_ACQUIRED": ItemAcquiredMonitor,
+    "ITEM_LOST": ItemLostMonitor,
+}
+
 # Maps item names that have a dedicated registry to that registry.
 # Items not listed here fall back to ITEM_MONITOR_REGISTRY.
 ITEM_SPECIFIC_REGISTRIES: dict[str, dict[str, type[ItemMonitor]]] = {
     "item_blink": BLINK_MONITOR_REGISTRY,
+    "item_black_king_bar": BKB_MONITOR_REGISTRY,
 }
 
 
