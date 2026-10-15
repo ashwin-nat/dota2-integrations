@@ -4,7 +4,9 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from src.rules.bus import EventContext, RuleEventBus
+from src.rules.ability_monitors import ABILITY_MONITOR_REGISTRY, AbilityMonitor
 from src.rules.config import (
+    AbilityMonitorConfig,
     AnyAction,
     AnyMonitor,
     BlinkMonitorConfig,
@@ -25,6 +27,7 @@ class CompiledRules:
     item_monitors: list[ItemMonitor] = field(default_factory=list)
     map_monitors: list[MapMonitor] = field(default_factory=list)
     hero_monitors: list[HeroMonitor] = field(default_factory=list)
+    ability_monitors: list[AbilityMonitor] = field(default_factory=list)
 
 
 def _enabled(actions: list[AnyAction]) -> list[AnyAction]:
@@ -65,7 +68,14 @@ def _compile_hero(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEve
     compiled.hero_monitors.append(HeroMonitor(m.event, m.event_key, bus))
 
 
+def _compile_ability(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEventBus, ctx: EventContext, compiled: CompiledRules) -> None:
+    assert isinstance(m, AbilityMonitorConfig)
+    bus.register(m.event_key, actions, ctx)
+    compiled.ability_monitors.append(ABILITY_MONITOR_REGISTRY[m.event](m.target, m.event_key, bus))
+
+
 _MONITOR_HANDLERS: dict[MonitorType, _MonitorHandler] = {
+    MonitorType.ABILITY: _compile_ability,
     MonitorType.ITEM:  _compile_item,
     MonitorType.MIDAS: _compile_midas,
     MonitorType.BLINK: _compile_blink,

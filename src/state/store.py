@@ -3,6 +3,7 @@ import logging
 from src.lighting.arbiter import LightingArbiter
 from src.rules.bus import RuleEventBus
 from src.rules.compiler import CompiledRules
+from .abilities import Abilities, parse_abilities
 from .hero import HeroState, parse_hero
 from .items import Items, parse_items
 from .map import MapState, parse_map
@@ -15,6 +16,7 @@ class GameState:
     def __init__(self, compiled_rules: CompiledRules, rule_bus: RuleEventBus, light_arbiter: LightingArbiter):
         self._version: int = 0
         self.items: Items | None = None
+        self.abilities: Abilities | None = None
         self.map: MapState | None = None
         self.player: PlayerState | None = None
         self.hero: HeroState | None = None
@@ -33,6 +35,7 @@ class GameState:
         self._version += 1
 
         items = data.get("items")
+        abilities = data.get("abilities")
         player = data.get("player")
         hero = data.get("hero")
         map = data.get("map")
@@ -46,6 +49,7 @@ class GameState:
             return
 
         self.items = parse_items(items) if items else None
+        self.abilities = parse_abilities(abilities) if abilities else None
         self.player = parse_player(player) if player else None
         self.hero = parse_hero(hero) if hero else None
         new_map = parse_map(map) if map else None
@@ -75,6 +79,8 @@ class GameState:
             m.clear()
         for m in self._compiled_rules.hero_monitors:
             m.clear()
+        for m in self._compiled_rules.ability_monitors:
+            m.clear()
 
     def _run_rule_monitors(self) -> None:
         if self.map:
@@ -85,6 +91,10 @@ class GameState:
             for monitor in self._compiled_rules.item_monitors:
                 monitor.evaluate(self.items, self._prev_items)
             self._prev_items = self.items
+
+        if self.abilities:
+            for monitor in self._compiled_rules.ability_monitors:
+                monitor.evaluate(self.abilities)
 
         if self.hero:
             for monitor in self._compiled_rules.hero_monitors:

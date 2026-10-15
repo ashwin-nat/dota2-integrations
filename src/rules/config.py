@@ -23,6 +23,7 @@ class MonitorType(StrEnum):
     BLINK = "blink"
     MAP   = "map"
     HERO  = "hero"
+    ABILITY = "ability"
 
 
 # --- Sound config ---
@@ -158,8 +159,18 @@ class HeroMonitorConfig(MonitorConfig):
         return f"__HERO__{self.event}__"
 
 
+class AbilityMonitorConfig(MonitorConfig):
+    type: Literal[MonitorType.ABILITY]
+    target: str  # internal ability name, e.g. "spectre_spectral_dagger"
+    event: Literal["COOLDOWN_STARTED"]
+
+    @property
+    def event_key(self) -> str:
+        return f"__ABILITY__{self.event}__{self.target}__"
+
+
 AnyMonitor = Annotated[
-    Union[ItemMonitorConfig, MidasMonitorConfig, BlinkMonitorConfig, MapMonitorConfig, HeroMonitorConfig],
+    Union[ItemMonitorConfig, MidasMonitorConfig, BlinkMonitorConfig, MapMonitorConfig, HeroMonitorConfig, AbilityMonitorConfig],
     Field(discriminator="type"),
 ]
 
