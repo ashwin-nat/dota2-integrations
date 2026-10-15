@@ -1,6 +1,9 @@
 import asyncio
+import logging
 
 from aiohttp import web
+
+logger = logging.getLogger(__name__)
 
 
 async def handle_gsi(queue: asyncio.Queue, request: web.Request) -> web.Response:
@@ -28,7 +31,7 @@ async def serve(queue: asyncio.Queue) -> None:
     site = web.TCPSite(runner, "127.0.0.1", 6969)
     await site.start()
 
-    print("Listening on http://127.0.0.1:6969")
+    logger.info("Listening on http://127.0.0.1:6969")
 
     try:
         await asyncio.get_running_loop().create_future()  # wait forever

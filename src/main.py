@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from pathlib import Path
 
 RULES_PATH = Path("rules.json")
@@ -6,11 +7,14 @@ RULES_PATH = Path("rules.json")
 from src.ingress.http_server import serve
 from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
+from src.log_setup import setup_logging
 from src.rules import compile_rules, RulesConfig
 from src.rules.action_executor import ActionExecutor
 from src.rules.bus import RuleEventBus
 from src.sound import SoundManager
 from src.state.store import GameState
+
+logger = logging.getLogger(__name__)
 
 
 def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
@@ -47,7 +51,7 @@ async def main() -> None:
     compiled = compile_rules(rules_config.rules, rule_bus)
     state.set_compiled_rules(compiled)
     n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
-    print(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
+    logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
     # -------------------------
 
     async def ingest() -> None:
@@ -66,9 +70,10 @@ async def main() -> None:
     ]
 
     for task in tasks:
-        print(f"Registered task: {task.get_name()}")
+        logger.info(f"Registered task: {task.get_name()}")
     await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
+    setup_logging()
     asyncio.run(main())

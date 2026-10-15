@@ -1,8 +1,12 @@
+import logging
+
 from src.lighting.arbiter import LightingArbiter
 from .hero import HeroState, parse_hero
 from .items import Items, parse_items
 from .map import MapState, parse_map
 from .player import PlayerState, parse_player
+
+logger = logging.getLogger(__name__)
 
 
 class GameState:
@@ -45,7 +49,7 @@ class GameState:
 
         game_state = map.get("game_state")
         if game_state != "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS":
-            print(f"Ignoring update: game state is {game_state}")
+            logger.info(f"Ignoring update: game state is {game_state}")
             return
 
         self.items = parse_items(items) if items else None
@@ -70,7 +74,7 @@ class GameState:
                 self._light_arbiter.clear_all()
             self._prev_items = None
             self._prev_hero = None
-            print(f"Match changed from {old_id} to {new_id}")
+            logger.info(f"Match changed from {old_id} to {new_id}")
 
     def _clear_monitors(self) -> None:
         if self._compiled_rules:

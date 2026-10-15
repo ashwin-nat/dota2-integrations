@@ -1,4 +1,8 @@
+import logging
+
 from src.lighting.controller import HSV, LightingController
+
+logger = logging.getLogger(__name__)
 
 
 class LogLightingDriver(LightingController):
@@ -15,16 +19,16 @@ class LogLightingDriver(LightingController):
     async def setup(self) -> None:
         if not self._enabled:
             return
-        print("[log-light] setup")
+        logger.info("[log-light] setup")
 
     async def set_colour(self, hsv: HSV) -> None:
         if not self._enabled:
             return
-        print(f"[log-light] set_colour h={hsv.hue} s={hsv.saturation} v={hsv.value}")
+        logger.info(f"[log-light] set_colour h={hsv.hue} s={hsv.saturation} v={hsv.value}")
         self._hsv = hsv
 
     async def get_hsv(self) -> HSV | None:
         if not self._enabled:
             return None
-        print(f"[log-light] get_hsv -> {self._hsv}")
+        logger.info(f"[log-light] get_hsv -> {self._hsv}")
         return self._hsv

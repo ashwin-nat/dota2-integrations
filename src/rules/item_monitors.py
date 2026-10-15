@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from src.rules.monitor_base import StatefulMonitor
@@ -7,6 +8,8 @@ from src.state.items import BaseItem, EmptyItem, NoChargeItem, SingleChargeItem,
 
 if TYPE_CHECKING:
     from src.rules.bus import RuleEventBus
+
+logger = logging.getLogger(__name__)
 
 
 class ItemMonitor(StatefulMonitor):
@@ -73,8 +76,8 @@ class CooldownStartedMonitor(ItemMonitor):
             return
         assert isinstance(curr, (NoChargeItem, SingleChargeItem, MultiChargeItem))
         if self._started(curr, cooldown):
-            print(f"Emitting {self._event_key} because cooldown started (was {self._prev_cooldown}, now {cooldown})")
-            print(f"Item state: {curr}")
+            logger.info(f"Emitting {self._event_key} because cooldown started (was {self._prev_cooldown}, now {cooldown})")
+            logger.info(f"Item state: {curr}")
             self._fire()
         elif cooldown == 0:
             self._end()

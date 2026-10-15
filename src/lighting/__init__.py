@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -14,6 +15,8 @@ _VENDOR_DRIVERS: dict[LightingVendor, type[LightingController]] = {
     LightingVendor.LOG: LogLightingDriver,
 }
 
+logger = logging.getLogger(__name__)
+
 
 def load_lighting_controller(vendor: LightingVendor, enabled: bool) -> LightingController:
     driver_cls = _VENDOR_DRIVERS[vendor]
@@ -26,7 +29,7 @@ def load_lighting_controller(vendor: LightingVendor, enabled: bool) -> LightingC
 
     if not config_path.exists():
         config_path.write_text(json.dumps(driver_cls.get_empty_config(), indent=4))
-        print(
+        logger.info(
             f"Lighting config created at '{config_path}'. "
             "Please fill in the required fields, then restart."
         )

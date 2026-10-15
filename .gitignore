@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 *.pyo
+logs/
 .python-version
 
 # Sample GSI payloads (local test data, not source)
