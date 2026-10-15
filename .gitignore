@@ -10,3 +10,6 @@ logs/
 *.json
 
 media/*
+
+# Local junction/symlink to .agents/skills for tools that only read .claude/skills
+.claude/skills

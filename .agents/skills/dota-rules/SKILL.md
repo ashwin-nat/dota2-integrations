@@ -5,7 +5,7 @@ description: Add, edit, remove, or debug rules in rules.json for the dota2-integ
 
 # dota2-integrations rules
 
-`rules.json` in the project root holds `rules`, `sound` and `lighting`. The schema source of truth is `src/rules/config.py`. Read it before every edit, because monitor types, events and action fields change over time. Don't rely on the tables in CLAUDE.md; they lag behind the code.
+`rules.json` in the project root holds `rules`, `sound` and `lighting`. The schema source of truth is `src/rules/config.py`. Read it before every edit, because monitor types, events and action fields change over time. Don't rely on schema tables in project docs or agent instruction files; they lag behind the code.
 
 ## Rule shape
 
@@ -30,13 +30,13 @@ Every action has `enabled` (default `true`). Use it to switch an action off with
    - `item` COOLDOWN_STARTED on `item_black_king_bar` is special-cased: it stays active only for the ~10s buff window, not the full cooldown.
    - `ability` only supports `COOLDOWN_STARTED`, and only for learned abilities. If the user asks about an ability with no cooldown (most passives), tell them the rule will never fire.
 2. **Resolve the `target` key.** It is the internal game name, not the display name. Never guess it.
-   - **Items:** look the key up in the item table on https://dota2.fandom.com/wiki/Cheats. Fetch the page's raw wikitext into the scratchpad. The rendered HTML page is too large to read reliably.
+   - **Items:** look the key up in the item table on https://dota2.fandom.com/wiki/Cheats. Fetch the page's raw wikitext into a temp directory outside the repo. The rendered HTML page is too large to read reliably.
      ```
-     curl -sS -A Mozilla/5.0 -o <scratchpad>/cheats.json "https://dota2.fandom.com/api.php?action=parse&page=Cheats&prop=wikitext&format=json"
+     curl -sS -A Mozilla/5.0 -o <tmpdir>/cheats.json "https://dota2.fandom.com/api.php?action=parse&page=Cheats&prop=wikitext&format=json"
      ```
      Then pull out display name → key pairs:
      ```
-     python -I -c "import json,re,sys; w=json.load(open(sys.argv[1],encoding='utf-8'))['parse']['wikitext']['*']; [print(a,'\t',b) for a,b in re.findall(r'\{\{I\|([^}|]+)[^}]*\}\}\s*\n\|\s*<code>(item_\w+)</code>',w)]" <scratchpad>/cheats.json
+     python -I -c "import json,re,sys; w=json.load(open(sys.argv[1],encoding='utf-8'))['parse']['wikitext']['*']; [print(a,'\t',b) for a,b in re.findall(r'\{\{I\|([^}|]+)[^}]*\}\}\s*\n\|\s*<code>(item_\w+)</code>',w)]" <tmpdir>/cheats.json
      ```
      Match the user's item to a display name; abbreviations like "BKB", "aghs", "euls" are fine to resolve. Keys often differ from display names: Aghanim's Scepter → `item_ultimate_scepter`, Eul's → `item_cyclone`, Battle Fury → `item_bfury`. If several entries could match (e.g. Aghanim's Scepter vs Blessing), ask which one. Use the item key, not the `item_recipe_*` column.
    - **Abilities:** no complete list is published online, and the set is too large to keep in this repo. Instead, the app writes the player hero's ability keys to the log at the start of each match, under a `Hero abilities:` line.
