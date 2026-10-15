@@ -32,6 +32,7 @@ src/
 ├── state/
 │   ├── store.py               # GameState — snapshot store, drives rule monitors on every update
 │   ├── items.py               # Items / item type parsing (EmptyItem, NoChargeItem, SingleChargeItem, MultiChargeItem)
+│   ├── abilities.py           # Abilities / Ability — one dataclass for every ability slot
 │   └── map.py                 # MapState parsing
 ├── events/
 │   ├── bus.py                 # EventBus — async fan-out bus for internal events
@@ -42,6 +43,7 @@ src/
 │   ├── bus.py                 # RuleEventBus — string-key async queue bus for rule events
 │   ├── action_executor.py     # ActionExecutor — dispatches typed actions to sound/lighting
 │   ├── item_monitors.py       # ItemMonitor subclasses + ITEM_MONITOR_REGISTRY / MIDAS_MONITOR_REGISTRY
+│   ├── ability_monitors.py    # AbilityMonitor + ABILITY_MONITOR_REGISTRY (cooldown-started tracking)
 │   └── map_monitor.py         # MapMonitor — day/night cycle transition detector
 ├── monitors/
 │   ├── base.py                # Monitor ABC
@@ -69,6 +71,7 @@ GameState(compiled_rules, rule_bus, light_arbiter)  # all required, wired once a
 state.update(data)               # -> None              replace snapshot, run rule monitors
 state.version()                  # -> int               monotonic counter, increments on every set
 state.items                      # -> Items | None       parsed item slots
+state.abilities                  # -> Abilities | None   parsed ability slots (ability0..abilityN)
 state.map                        # -> MapState | None    parsed map state
 ```
 
@@ -83,6 +86,9 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 | `item`   | `ItemMonitorConfig`  | `COOLDOWN_READY`, `COOLDOWN_STARTED`, `ITEM_ACQUIRED`, `ITEM_LOST` |
 | `midas`  | `MidasMonitorConfig` | `CHARGED` (0→1 charge), `OVERCHARGED` (→2 charges) |
 | `map`    | `MapMonitorConfig`   | `DAYTIME_STARTED`, `NIGHTTIME_STARTED`          |
+| `ability`| `AbilityMonitorConfig` | `COOLDOWN_STARTED` (cooldown 0 → > 0)         |
+
+`ability` monitors take a `target` — the internal ability name from the GSI `abilities` block (e.g. `spectre_reality`), so no ability list is maintained in code. They only track learned abilities (`level > 0`) and ignore `max_cooldown` (the game reports it unreliably). Choosing an ability that actually has a cooldown is the rule author's responsibility.
 
 ### Action types
 
