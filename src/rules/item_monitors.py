@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.rules.monitor_base import StatefulMonitor
 from src.state.items import BaseItem, EmptyItem, NoChargeItem, SingleChargeItem, MultiChargeItem, Items
 
 if TYPE_CHECKING:
     from src.rules.bus import RuleEventBus
 
 
-class ItemMonitor:
+class ItemMonitor(StatefulMonitor):
     """Base class for item monitors compiled from rules.
 
     Each monitor receives the full Items snapshot (current and previous) and
@@ -16,15 +17,11 @@ class ItemMonitor:
     """
 
     def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+        super().__init__(event_key, bus)
         self._target = target
-        self._event_key = event_key
-        self._bus = bus
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
         raise NotImplementedError
-
-    def clear(self) -> None:
-        pass
 
 
 def _find_item(items: Items, name: str) -> BaseItem | None:
@@ -36,7 +33,7 @@ def _find_item(items: Items, name: str) -> BaseItem | None:
 
 
 class CooldownReadyMonitor(ItemMonitor):
-    """Fires when the target item's cooldown transitions from > 0 to 0."""
+    """Active while the target item is off cooldown, from the > 0 to 0 transition."""
 
     def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
         super().__init__(target, event_key, bus)
@@ -47,17 +44,21 @@ class CooldownReadyMonitor(ItemMonitor):
         cooldown = _get_cooldown(curr)
         if cooldown is None:
             self._prev_cooldown = None
+            self._end()
             return
         if self._prev_cooldown is not None and self._prev_cooldown > 0 and cooldown == 0:
-            self._bus.emit(self._event_key)
+            self._fire()
+        elif cooldown > 0:
+            self._end()
         self._prev_cooldown = cooldown
 
     def clear(self) -> None:
+        super().clear()
         self._prev_cooldown = None
 
 
 class CooldownStartedMonitor(ItemMonitor):
-    """Fires when the target item's cooldown transitions from 0 to > 0."""
+    """Active while the target item is on cooldown, from the 0 to > 0 transition."""
 
     def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
         super().__init__(target, event_key, bus)
@@ -68,21 +69,28 @@ class CooldownStartedMonitor(ItemMonitor):
         cooldown = _get_cooldown(curr)
         if cooldown is None:
             self._prev_cooldown = None
+            self._end()
             return
         assert isinstance(curr, (NoChargeItem, SingleChargeItem, MultiChargeItem))
-        max_cd = curr.max_cooldown - 1 # Game seems to report max cooldown as 1 higher than actual for some reason
-        if self._prev_cooldown is not None and self._prev_cooldown == 0 and cooldown == max_cd:
+        if self._started(curr, cooldown):
             print(f"Emitting {self._event_key} because cooldown started (was {self._prev_cooldown}, now {cooldown})")
             print(f"Item state: {curr}")
-            self._bus.emit(self._event_key)
+            self._fire()
+        elif cooldown == 0:
+            self._end()
         self._prev_cooldown = cooldown
 
+    def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:
+        max_cd = curr.max_cooldown - 1 # Game seems to report max cooldown as 1 higher than actual for some reason
+        return self._prev_cooldown == 0 and cooldown == max_cd
+
     def clear(self) -> None:
+        super().clear()
         self._prev_cooldown = None
 
 
 class ItemAcquiredMonitor(ItemMonitor):
-    """Fires once when the target item appears anywhere in the inventory."""
+    """Active while the target item is anywhere in the inventory."""
 
     def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
         super().__init__(target, event_key, bus)
@@ -92,16 +100,18 @@ class ItemAcquiredMonitor(ItemMonitor):
         found = _find_item(items, self._target) is not None
         if not found:
             self._seen = False
+            self._end()
         elif not self._seen:
             self._seen = True
-            self._bus.emit(self._event_key)
+            self._fire()
 
     def clear(self) -> None:
+        super().clear()
         self._seen = False
 
 
 class ItemLostMonitor(ItemMonitor):
-    """Fires when the target item disappears from the inventory."""
+    """Active from when the target item disappears from the inventory until it returns."""
 
     def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
         super().__init__(target, event_key, bus)
@@ -110,52 +120,41 @@ class ItemLostMonitor(ItemMonitor):
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
         has_item = _find_item(items, self._target) is not None
         if self._had_item and not has_item:
-            self._bus.emit(self._event_key)
+            self._fire()
+        elif has_item:
+            self._end()
         self._had_item = has_item
 
     def clear(self) -> None:
+        super().clear()
         self._had_item = False
 
 
 class MidasChargedMonitor(ItemMonitor):
-    """Fires when Midas transitions to single charge (both 2 -> 1 and 0 -> 1)."""
+    """Active while Midas has exactly 1 charge, including when first seen at 1 (it is bought with 1).
 
-    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(target, event_key, bus)
-        self._prev_charges: int | None = None
+    Assumes charges never jump 2 -> 0 (would be a game bug).
+    """
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
         curr = _find_item(items, self._target)
-        if not isinstance(curr, MultiChargeItem):
-            self._prev_charges = None
-            return
-        if self._prev_charges is not None and self._prev_charges != curr.charges and curr.charges == 1:
-            self._bus.emit(self._event_key)
-        self._prev_charges = curr.charges
-
-    def clear(self) -> None:
-
-        self._prev_charges = None
+        if isinstance(curr, MultiChargeItem) and curr.charges == 1:
+            if not self._active:
+                self._fire()
+        else:
+            self._end()
 
 
 class MidasOverchargedMonitor(ItemMonitor):
-    """Fires when Midas reaches 2 charges."""
-
-    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(target, event_key, bus)
-        self._prev_charges: int | None = None
+    """Active while Midas has 2 charges."""
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
         curr = _find_item(items, self._target)
-        if not isinstance(curr, MultiChargeItem):
-            self._prev_charges = None
-            return
-        if self._prev_charges is not None and self._prev_charges != 2 and curr.charges == 2:
-            self._bus.emit(self._event_key)
-        self._prev_charges = curr.charges
-
-    def clear(self) -> None:
-        self._prev_charges = None
+        if isinstance(curr, MultiChargeItem) and curr.charges == 2:
+            if not self._active:
+                self._fire()
+        else:
+            self._end()
 
 
 # Registry: event name → monitor class
@@ -175,17 +174,11 @@ MIDAS_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
 class BlinkCooldownStartedMonitor(CooldownStartedMonitor):
     """Fires when Blink Dagger is used (cooldown 0 → >0), ignoring cancel-penalty cooldowns (max_cooldown==4)."""
 
-    def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        curr = _find_item(items, self._target)
-        cooldown = _get_cooldown(curr)
-        if cooldown is None:
-            self._prev_cooldown = None
-            return
+    def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:
         # When the player gets hit, blink gets cancelled for 3 sec (game for whatever reason reprots it as 4)
-        cancelled = isinstance(curr, (NoChargeItem, SingleChargeItem, MultiChargeItem)) and curr.max_cooldown == 4
-        if not cancelled and self._prev_cooldown == 0 and cooldown > 0:
-            self._bus.emit(self._event_key)
-        self._prev_cooldown = cooldown
+        cancelled = curr.max_cooldown == 4
+        return not cancelled and self._prev_cooldown == 0 and cooldown > 0
+
 
 BLINK_MONITOR_REGISTRY: dict[str, type[ItemMonitor]] = {
     "COOLDOWN_READY": CooldownReadyMonitor,

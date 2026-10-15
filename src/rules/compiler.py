@@ -13,7 +13,6 @@ from src.rules.config import (
     MapMonitorConfig,
     MidasMonitorConfig,
     MonitorType,
-    ResetLightAction,
     Rule,
 )
 from src.rules.item_monitors import BLINK_MONITOR_REGISTRY, ITEM_MONITOR_REGISTRY, ITEM_SPECIFIC_REGISTRIES, MIDAS_MONITOR_REGISTRY, ItemMonitor
@@ -54,11 +53,8 @@ def _compile_blink(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEv
     compiled.item_monitors.append(BLINK_MONITOR_REGISTRY[m.event]("item_blink", m.event_key, bus))
 
 
-def _compile_map(rule: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEventBus, ctx: EventContext, compiled: CompiledRules) -> None:
+def _compile_map(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEventBus, ctx: EventContext, compiled: CompiledRules) -> None:
     assert isinstance(m, MapMonitorConfig)
-    for action in actions:
-        if isinstance(action, ResetLightAction):
-            raise ValueError(f"Rule {rule.id!r}: reset_light cannot be used on map monitors")
     bus.register(m.event_key, actions, ctx)
     compiled.map_monitors.append(MapMonitor(m.event, m.event_key, bus))
 

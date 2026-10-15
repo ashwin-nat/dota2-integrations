@@ -4,6 +4,7 @@ from pathlib import Path
 RULES_PATH = Path("rules.json")
 
 from src.ingress.http_server import serve
+from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
 from src.rules import compile_rules, RulesConfig
 from src.rules.action_executor import ActionExecutor
@@ -39,12 +40,10 @@ async def main() -> None:
 
     # --- Rule engine setup ---
     sound = SoundManager(default_volume=rules_config.sound.volume / 100)
-    executor = ActionExecutor(
-        sound, lighting,
-        map_colours=rules_config.map_colours,
-        get_map=lambda: state.map,
-    )
-    rule_bus = RuleEventBus()
+    executor = ActionExecutor(sound)
+    arbiter = LightingArbiter(lighting)
+    state.set_light_arbiter(arbiter)
+    rule_bus = RuleEventBus(arbiter)
     compiled = compile_rules(rules_config.rules, rule_bus)
     state.set_compiled_rules(compiled)
     n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
@@ -58,6 +57,7 @@ async def main() -> None:
 
     tasks = [
         asyncio.create_task(ingest(), name="ingest"),
+        asyncio.create_task(arbiter.run(), name="lighting"),
         *[
             asyncio.create_task(coro, name=name)
             for name, coro in executor.worker_coroutines(rule_bus).items()

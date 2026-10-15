@@ -1,3 +1,4 @@
+from src.lighting.arbiter import LightingArbiter
 from .hero import HeroState, parse_hero
 from .items import Items, parse_items
 from .map import MapState, parse_map
@@ -17,6 +18,11 @@ class GameState:
         self._compiled_rules: CompiledRules | None = None
         self._prev_items: Items | None = None
         self._prev_hero: HeroState | None = None
+        self._light_arbiter: LightingArbiter | None = None
+
+    def set_light_arbiter(self, arbiter: LightingArbiter) -> None:
+        """Attach the lighting arbiter, committed once per processed update."""
+        self._light_arbiter = arbiter
 
     def set_compiled_rules(self, compiled_rules) -> None:
         """Attach precompiled rule monitors. Called once at startup."""
@@ -49,6 +55,8 @@ class GameState:
         self._handle_match_change(new_map)
         self.map = new_map
         self._run_rule_monitors()
+        if self._light_arbiter:
+            self._light_arbiter.commit()
 
     def version(self) -> int:
         return self._version
@@ -58,6 +66,8 @@ class GameState:
         new_id = new_map.matchid if new_map else None
         if new_id != old_id:
             self._clear_monitors()
+            if self._light_arbiter:
+                self._light_arbiter.clear_all()
             self._prev_items = None
             self._prev_hero = None
             print(f"Match changed from {old_id} to {new_id}")

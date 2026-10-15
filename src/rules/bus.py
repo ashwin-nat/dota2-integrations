@@ -4,16 +4,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.rules.config import ActionType, AnyAction, MonitorType
-
-# Action types that share the lighting queue
-_LIGHT_TYPES = {ActionType.LIGHT, ActionType.RESET_LIGHT}
-
-# Canonical queue key for each action type
-def _queue_key(action_type: ActionType) -> ActionType:
-    if action_type in _LIGHT_TYPES:
-        return ActionType.LIGHT
-    return action_type
+from src.lighting.arbiter import MAP_PRIORITY, LightingArbiter
+from src.rules.config import ActionType, AnyAction, LightAction, MonitorType
 
 
 @dataclass
@@ -36,13 +28,16 @@ class RuleEventBus:
     """Async event bus with one queue per action type.
 
     On emit, each action in the rule is routed to its type's queue.
-    reset_light shares the light queue (same subsystem, must stay serial).
+    Lighting actions bypass the queues: they update the LightingArbiter
+    synchronously and are applied when the arbiter commits at the end of the
+    state update.
     """
 
-    # The four independent action queues
-    QUEUE_KEYS = (ActionType.PLAY_SOUND, ActionType.LIGHT, ActionType.LOGGER, ActionType.WEBHOOK)
+    # The independent action queues
+    QUEUE_KEYS = (ActionType.PLAY_SOUND, ActionType.LOGGER, ActionType.WEBHOOK)
 
-    def __init__(self) -> None:
+    def __init__(self, arbiter: LightingArbiter) -> None:
+        self._arbiter = arbiter
         self._listeners: dict[str, list[AnyAction]] = {}
         self._contexts: dict[str, EventContext] = {}
         self._queues: dict[ActionType, asyncio.Queue[QueuedAction]] = {
@@ -63,8 +58,17 @@ class RuleEventBus:
         for action in actions:
             if not action.enabled:
                 continue
-            q = self._queues[_queue_key(action.type)]
-            q.put_nowait(QueuedAction(action=action, ctx=ctx))
+            if isinstance(action, LightAction):
+                # Map rules have no priority (config-enforced) and sit at the baseline.
+                self._arbiter.set(action.priority or MAP_PRIORITY, (action.r, action.g, action.b))
+            else:
+                self._queues[action.type].put_nowait(QueuedAction(action=action, ctx=ctx))
+
+    def retract(self, event_key: str) -> None:
+        """Withdraw the light requests set by this event's rules (the state they signalled has ended)."""
+        for action in self._listeners.get(event_key, []):
+            if isinstance(action, LightAction) and action.enabled and action.priority is not None:
+                self._arbiter.clear(action.priority)
 
     def queue_for(self, key: ActionType) -> asyncio.Queue[QueuedAction]:
         return self._queues[key]

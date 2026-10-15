@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class ActionType(StrEnum):
     PLAY_SOUND  = "play_sound"
     LIGHT       = "light"
-    RESET_LIGHT = "reset_light"
     LOGGER      = "logger"
     WEBHOOK     = "webhook"
 
@@ -71,15 +70,10 @@ class LightAction(BaseAction):
     r: int = Field(ge=0, le=255)
     g: int = Field(ge=0, le=255)
     b: int = Field(ge=0, le=255)
-
-
-class ResetLightAction(BaseAction):
-    """Resets lighting to the map-level day/night colour for the current game time.
-
-    Requires ``map_colours`` to be defined in the top-level rules config.
-    Cannot be used on map-level monitors (those define the baseline colours).
-    """
-    type: Literal[ActionType.RESET_LIGHT]
+    # Higher wins and doubles as the request's identity, so it must be unique
+    # across rules. Required on every non-map rule; must be unset on map
+    # monitors, which always use the hard-coded baseline (priority 0).
+    priority: int | None = Field(ge=1, default=None)
 
 
 class LoggerAction(BaseAction):
@@ -111,23 +105,9 @@ class WebhookAction(BaseAction):
 
 
 AnyAction = Annotated[
-    Union[PlaySoundAction, LightAction, ResetLightAction, LoggerAction, WebhookAction],
+    Union[PlaySoundAction, LightAction, LoggerAction, WebhookAction],
     Field(discriminator="type"),
 ]
-
-
-# --- Map colours ---
-
-class RGB(BaseModel):
-    r: int = Field(ge=0, le=255)
-    g: int = Field(ge=0, le=255)
-    b: int = Field(ge=0, le=255)
-
-
-class MapColours(BaseModel):
-    """Day/night baseline colours used by the reset_light action."""
-    day: RGB
-    night: RGB
 
 
 # --- Monitor configs ---
@@ -200,27 +180,31 @@ class Rule(BaseModel):
 
 # --- Top-level config ---
 
-def _has_reset_light(rules: list[Rule]) -> bool:
-    return any(
-        isinstance(action, ResetLightAction)
-        for rule in rules
-        for action in rule.actions
-        if action.enabled
-    )
-
-
 class RulesConfig(BaseModel):
     rules: list[Rule] = Field(default_factory=list)
-    map_colours: MapColours | None = None
     sound: SoundConfig = Field(default_factory=SoundConfig)
     lighting: LightingConfig = Field(default_factory=LightingConfig)
 
     @model_validator(mode="after")
-    def reset_light_requires_map_colours(self) -> RulesConfig:
-        if _has_reset_light(self.rules) and self.map_colours is None:
-            raise ValueError(
-                "map_colours must be defined when any rule uses the reset_light action"
-            )
+    def validate_light_priorities(self) -> RulesConfig:
+        seen: dict[int, str] = {}
+        for rule in self.rules:
+            for action in rule.actions:
+                if not (isinstance(action, LightAction) and action.enabled):
+                    continue
+                if rule.monitor.type == MonitorType.MAP:
+                    if action.priority is not None:
+                        raise ValueError(
+                            f"Rule {rule.id!r}: priority cannot be set on map monitors (they are the baseline)"
+                        )
+                    continue
+                if action.priority is None:
+                    raise ValueError(f"Rule {rule.id!r}: light action requires a priority")
+                if action.priority in seen:
+                    raise ValueError(
+                        f"Rule {rule.id!r}: light priority {action.priority} already used by rule {seen[action.priority]!r}"
+                    )
+                seen[action.priority] = rule.id
         return self
 
     @classmethod

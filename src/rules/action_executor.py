@@ -3,26 +3,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qs
 
 import aiohttp
 
-from src.lighting.controller import LightingController
 from src.rules.bus import EventContext, QueuedAction, RuleEventBus
 from src.rules.config import (
     ActionType,
     AnyAction,
-    LightAction,
     LoggerAction,
-    MapColours,
     PlaySoundAction,
     WebhookAction,
 )
 from src.sound import SoundManager
-
-if TYPE_CHECKING:
-    from src.state.map import MapState
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +30,8 @@ class ActionExecutor:
     def __init__(
         self,
         sound: SoundManager,
-        lighting: LightingController,
-        map_colours: MapColours | None = None,
-        get_map: Callable[[], MapState | None] | None = None,
     ) -> None:
         self._sound = sound
-        self._lighting = lighting
-        self._map_colours = map_colours
-        self._get_map = get_map
         self._webhook_last_fired: dict[int, float] = {}
         self._webhook_tasks: set[asyncio.Task[None]] = set()
 
@@ -52,7 +40,6 @@ class ActionExecutor:
         return {
             "action_logger":  self._drain(bus.queue_for(ActionType.LOGGER)),
             "action_sound":   self._drain(bus.queue_for(ActionType.PLAY_SOUND)),
-            "action_light":   self._drain(bus.queue_for(ActionType.LIGHT)),
             "action_webhook": self._drain(bus.queue_for(ActionType.WEBHOOK)),
         }
 
@@ -66,10 +53,6 @@ class ActionExecutor:
     async def _dispatch(self, action: AnyAction, ctx: EventContext) -> None:
         if action.type == ActionType.PLAY_SOUND:
             await self._execute_play_sound(action)  # type: ignore[arg-type]
-        elif action.type == ActionType.LIGHT:
-            await self._execute_light(action)  # type: ignore[arg-type]
-        elif action.type == ActionType.RESET_LIGHT:
-            await self._execute_reset_light()
         elif action.type == ActionType.LOGGER:
             await self._execute_logger(action)  # type: ignore[arg-type]
         elif action.type == ActionType.WEBHOOK:
@@ -77,18 +60,6 @@ class ActionExecutor:
 
     async def _execute_play_sound(self, action: PlaySoundAction) -> None:
         await self._sound.play(action.file, volume=action.volume / 100)
-
-    async def _execute_light(self, action: LightAction) -> None:
-        await self._lighting.set_colour_rgb(action.r, action.g, action.b)
-
-    async def _execute_reset_light(self) -> None:
-        if self._map_colours is None or self._get_map is None:
-            return
-        map_state = self._get_map()
-        if map_state is None:
-            return
-        colour = self._map_colours.day if map_state.daytime else self._map_colours.night
-        await self._lighting.set_colour_rgb(colour.r, colour.g, colour.b)
 
     async def _execute_logger(self, action: LoggerAction) -> None:
         print(f"[logger] {action.message}")
