@@ -26,6 +26,7 @@ class GameState:
         self._light_arbiter = light_arbiter  # committed once per processed update
         self._prev_items: Items | None = None
         self._prev_hero: HeroState | None = None
+        self._abilities_logged: bool = False
 
     def update(self, data: dict):
         # This method is synchronous. Only CPU-bound operations (parsing, diffing,
@@ -55,6 +56,7 @@ class GameState:
         new_map = parse_map(map) if map else None
         self._handle_match_change(new_map)
         self.map = new_map
+        self._log_abilities_once()
         self._rule_bus.set_time(new_map.game_time, new_map.clock_time)
         self._run_rule_monitors()
         self._light_arbiter.commit()
@@ -70,7 +72,15 @@ class GameState:
             self._light_arbiter.clear_all()
             self._prev_items = None
             self._prev_hero = None
+            self._abilities_logged = False
             logger.info(f"Match changed from {old_id} to {new_id}")
+
+    def _log_abilities_once(self) -> None:
+        if self._abilities_logged or not self.abilities:
+            return
+        lines = "\n".join(f"  {a.name}" for a in self.abilities)
+        logger.info(f"Hero abilities:\n{lines}")
+        self._abilities_logged = True
 
     def _clear_monitors(self) -> None:
         for m in self._compiled_rules.item_monitors:
