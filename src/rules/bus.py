@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from src.lighting.arbiter import MAP_PRIORITY, LightingArbiter
 from src.rules.config import ActionType, AnyAction, LightAction, MonitorType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -34,7 +37,7 @@ class RuleEventBus:
     """
 
     # The independent action queues
-    QUEUE_KEYS = (ActionType.PLAY_SOUND, ActionType.LOGGER, ActionType.WEBHOOK)
+    QUEUE_KEYS = (ActionType.PLAY_SOUND, ActionType.WEBHOOK)
 
     def __init__(self, arbiter: LightingArbiter) -> None:
         self._arbiter = arbiter
@@ -58,6 +61,8 @@ class RuleEventBus:
         for action in actions:
             if not action.enabled:
                 continue
+            params = action.model_dump(exclude={"type", "enabled", "api_key"})
+            logger.info(f"Rule {ctx.rule_id!r} fired {ctx.event_name}: {action.type} {params}")
             if isinstance(action, LightAction):
                 # Map rules have no priority (config-enforced) and sit at the baseline.
                 self._arbiter.set(action.priority or MAP_PRIORITY, (action.r, action.g, action.b))

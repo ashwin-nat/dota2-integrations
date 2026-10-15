@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class ActionType(StrEnum):
     PLAY_SOUND  = "play_sound"
     LIGHT       = "light"
-    LOGGER      = "logger"
     WEBHOOK     = "webhook"
 
 
@@ -76,11 +75,6 @@ class LightAction(BaseAction):
     priority: int | None = Field(ge=1, default=None)
 
 
-class LoggerAction(BaseAction):
-    type: Literal[ActionType.LOGGER]
-    message: str
-
-
 class WebhookAction(BaseAction):
     type: Literal[ActionType.WEBHOOK]
     url: str
@@ -105,7 +99,7 @@ class WebhookAction(BaseAction):
 
 
 AnyAction = Annotated[
-    Union[PlaySoundAction, LightAction, LoggerAction, WebhookAction],
+    Union[PlaySoundAction, LightAction, WebhookAction],
     Field(discriminator="type"),
 ]
 

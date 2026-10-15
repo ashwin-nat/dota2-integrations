@@ -92,7 +92,6 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 | `play_sound`   | `file: str`             |                                            |
 | `light`        | `r`, `g`, `b` (0–255)  |                                            |
 | `reset_light`  | _(none)_                | Restores day/night colour from `map_colours`; forbidden on map monitors |
-| `logger`       | `message: str`          |                                            |
 
 ### `rules.json` format
 
