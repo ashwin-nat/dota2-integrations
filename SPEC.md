@@ -1,62 +1,20 @@
-# Dota GSI App — State Layer Spec (v0, uv-based)
+# Dota GSI App — Spec
 
 ## Goal
 
-Store the latest incoming GSI payload **as-is**, with **zero schema assumptions**, and make it available to the rest of the system.
+Receive Dota 2 GSI payloads, parse the parts we care about into typed state, and drive a rule engine that fires sound / lighting / webhook actions on game events.
 
 ---
 
 ## Tech Stack
 
-* Python 3.12+
+* Python 3.13
 * Async runtime: `asyncio`
 * HTTP server: `aiohttp`
-* Dependency & environment management: uv
+* Config validation: `pydantic`
+* Dependency & environment management: `uv`
 
----
-
-## Project Structure
-
-```text
-dota_gsi_app/
-│
-├── src/
-│   ├── state/
-│   │   └── store.py          # GameState (single source of truth)
-│   │
-│   ├── ingress/
-│   │   └── http_handler.py   # aiohttp POST endpoint
-│   │
-│   ├── core/
-│   │   └── runtime.py        # orchestrates tasks
-│   │
-│   └── main.py               # entry point
-│
-├── pyproject.toml
-└── README.md
-```
-
----
-
-## Environment Setup (uv)
-
-### Initialize project
-
-```bash
-uv init
-```
-
----
-
-### Add dependency
-
-```bash
-uv add aiohttp
-```
-
----
-
-### Run the app
+Run with:
 
 ```bash
 uv run python -m src.main
@@ -64,22 +22,42 @@ uv run python -m src.main
 
 ---
 
-## Design Principles
+## Project Structure
 
-* **No schema assumptions**
-  Treat incoming data as opaque JSON (`dict`).
+```text
+src/
+├── main.py              # entry point — wires subsystems, runs asyncio tasks
+├── log_setup.py         # stdout + rotating file logging
+├── ingress/
+│   └── http_server.py   # POST / handler, pushes payloads onto an asyncio.Queue
+├── state/
+│   ├── store.py         # GameState — parses payloads, runs rule monitors
+│   ├── items.py / map.py / hero.py / player.py   # typed parsers
+├── rules/
+│   ├── config.py        # pydantic models for rules.json
+│   ├── compiler.py      # compile_rules() -> CompiledRules
+│   ├── bus.py           # RuleEventBus + EventContext
+│   ├── action_executor.py
+│   ├── monitor_base.py / item_monitors.py / map_monitor.py / hero_monitor.py
+├── lighting/            # LightingArbiter + vendor drivers (tapo, tuya, log)
+└── sound/               # SoundManager
+```
 
-* **Latest snapshot wins**
-  Each new payload fully replaces the previous state.
+---
 
-* **No merging / no parsing**
-  Do not interpret or transform data at this stage.
+## Data Flow
 
-* **Transport-agnostic**
-  State layer must not depend on HTTP / aiohttp.
+```text
+Dota 2 ──POST──► http_server ──queue──► ingest task ──► GameState.update(data)
+                                                            │
+                                                            ├─ parse items / map / hero / player
+                                                            ├─ rule_bus.set_time(game_time, clock_time)
+                                                            ├─ run monitors ──► rule_bus.emit(event_key)
+                                                            └─ light_arbiter.commit()
 
-* **Event-ready (future)**
-  Updates must be replace-based to allow diffing later.
+rule_bus.emit ──► light actions  → LightingArbiter (synchronous)
+              └─► other actions  → per-type queue → ActionExecutor worker
+```
 
 ---
 
@@ -89,171 +67,56 @@ uv run python -m src.main
 
 ```python
 class GameState:
-    def __init__(self):
-        self._data: dict | None = None
-        self._version: int = 0
+    def __init__(self, compiled_rules: CompiledRules, rule_bus: RuleEventBus, light_arbiter: LightingArbiter): ...
 
-    def get(self) -> dict | None:
-        return self._data
+    def update(self, data: dict) -> None: ...   # parse payload, run monitors
+    def version(self) -> int: ...                # increments on every update
 
-    def set(self, data: dict):
-        # store a copy to avoid accidental mutation
-        self._data = data.copy()
-        self._version += 1
-
-    def version(self) -> int:
-        return self._version
+    items: Items | None
+    map: MapState | None
+    player: PlayerState | None
+    hero: HeroState | None
 ```
+
+All dependencies are required constructor args, wired once at startup in `main.py`:
+
+```python
+arbiter = LightingArbiter(lighting)
+rule_bus = RuleEventBus(arbiter)
+compiled = compile_rules(rules_config.rules, rule_bus)
+state = GameState(compiled, rule_bus, arbiter)
+```
+
+### Update semantics
+
+* Updates without a `map` section, or where `map.game_state` is not `DOTA_GAMERULES_STATE_GAME_IN_PROGRESS`, are ignored.
+* Otherwise each section is re-parsed and **replaces** the previous value (latest snapshot wins, no merging).
+* A change in `map.matchid` clears all monitor state and lighting requests.
+* `update()` is synchronous and must stay CPU-only. Anything I/O-bound (sound, lights, HTTP) goes through `RuleEventBus` and runs asynchronously.
 
 ---
 
-## Update Semantics
+## Rule Events
 
-* Input: `dict` (raw GSI payload)
-* Operation: `set(data)`
-* Behavior:
-
-  * Previous state is discarded
-  * New state becomes the single source of truth
-  * Version is incremented
-
-```text
-old_state → discarded
-new_state → stored
-```
-
----
-
-## Processing Contract
-
-### Input to state layer:
+Monitors call `bus.emit(event_key)`. The bus attaches an `EventContext` to every action it dispatches:
 
 ```python
-dict
+@dataclass
+class EventContext:
+    rule_id: str
+    monitor_type: MonitorType
+    event_name: str
+    data: dict[str, Any]
+    game_time: int | None    # stamped from map state at fire time
+    clock_time: int | None
 ```
 
-### Output from state layer:
-
-```python
-dict | None
-```
-
----
-
-## Ingress (HTTP Layer)
-
-### `src/ingress/http_handler.py`
-
-```python
-from aiohttp import web
-
-async def handle_gsi(request: web.Request):
-    try:
-        data = await request.json()
-    except Exception:
-        return web.Response(status=400, text="Invalid JSON")
-
-    state = request.app["state"]
-    state.set(data)
-
-    return web.Response(text="OK")
-```
-
----
-
-## Runtime (Orchestration)
-
-### `src/core/runtime.py`
-
-```python
-import asyncio
-from aiohttp import web
-from src.ingress.http_handler import handle_gsi
-
-
-async def run_server(state):
-    app = web.Application()
-    app["state"] = state
-    app.router.add_post("/", handle_gsi)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    site = web.TCPSite(runner, "127.0.0.1", 6969)
-    await site.start()
-
-    print("Listening on http://127.0.0.1:6969")
-
-    return runner
-
-
-async def main_loop():
-    from src.state.store import GameState
-
-    state = GameState()
-
-    runner = await run_server(state)
-
-    try:
-        while True:
-            await asyncio.sleep(3600)
-    finally:
-        await runner.cleanup()
-```
-
----
-
-## Entry Point
-
-### `src/main.py`
-
-```python
-import asyncio
-from src.core.runtime import main_loop
-
-if __name__ == "__main__":
-    asyncio.run(main_loop())
-```
+`ActionExecutor` logs the context before executing each action. Light actions never reach the executor, so the bus logs them directly.
 
 ---
 
 ## Concurrency Model
 
-* Single writer (HTTP handler → state.set)
+* Single writer: the `ingest` task calling `state.update()`
 * Multiple readers allowed
-* No locks required (initial version)
-
----
-
-## Constraints
-
-* Do NOT access nested fields (no schema assumptions)
-* Do NOT mutate returned state
-* Do NOT partially update state
-* Do NOT introduce derived values
-
----
-
-## Future Extensions (Not in Scope)
-
-* Typed models
-* Partial updates / merge logic
-* Diff computation
-* Event bus integration
-* Validation layer
-
----
-
-## Summary
-
-This layer acts as a:
-
-```text
-Latest Snapshot Store
-```
-
-It provides a stable foundation for:
-
-* schema discovery through observation
-* diff-based processing later
-* event-driven architecture
+* No locks

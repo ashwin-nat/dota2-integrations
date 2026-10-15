@@ -55,7 +55,7 @@ src/
 ## Key Design Decisions
 
 - **No schema assumptions on raw state** — GSI payload is stored as an opaque `dict`; typed state (`Items`, `MapState`) is parsed alongside it.
-- **Latest snapshot wins** — each `state.set(data)` fully replaces the previous state.
+- **Latest snapshot wins** — each `state.update(data)` fully replaces the previous state.
 - **Transport-agnostic state layer** — `GameState` has no aiohttp dependency.
 - **Type-safe handler injection** — HTTP handler receives `EventBus` as a bound arg, emits `INCOMING_DATA`; `GameState` subscribes to that event.
 - **No locks** — single writer (HTTP handler via event bus), multiple readers allowed.
@@ -65,10 +65,9 @@ src/
 ## State API (`src/state/store.py`)
 
 ```python
-state.get()                      # -> dict | None       current raw snapshot
-state.set(data)                  # -> None              replace snapshot, run rule monitors
+GameState(compiled_rules, rule_bus, light_arbiter)  # all required, wired once at startup
+state.update(data)               # -> None              replace snapshot, run rule monitors
 state.version()                  # -> int               monotonic counter, increments on every set
-state.set_compiled_rules(rules)  # -> None              attach CompiledRules once at startup
 state.items                      # -> Items | None       parsed item slots
 state.map                        # -> MapState | None    parsed map state
 ```

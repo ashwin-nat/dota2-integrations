@@ -49,6 +49,7 @@ class ActionExecutor:
             queue.task_done()
 
     async def _dispatch(self, action: AnyAction, ctx: EventContext) -> None:
+        logger.info(f"{ctx} -> {action.type}")
         if action.type == ActionType.PLAY_SOUND:
             await self._execute_play_sound(action)  # type: ignore[arg-type]
         elif action.type == ActionType.WEBHOOK:
@@ -100,6 +101,8 @@ async def _fire_webhook(action: WebhookAction, ctx: EventContext) -> None:
         "rule_id": ctx.rule_id,
         "monitor_type": ctx.monitor_type,
         "timestamp": time.time(),
+        "game_time": ctx.game_time,
+        "clock_time": ctx.clock_time,
         "data": ctx.data,
     }
     try:

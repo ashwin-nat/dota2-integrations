@@ -1,6 +1,8 @@
 import logging
 
 from src.lighting.arbiter import LightingArbiter
+from src.rules.bus import RuleEventBus
+from src.rules.compiler import CompiledRules
 from .hero import HeroState, parse_hero
 from .items import Items, parse_items
 from .map import MapState, parse_map
@@ -10,29 +12,20 @@ logger = logging.getLogger(__name__)
 
 
 class GameState:
-    def __init__(self):
+    def __init__(self, compiled_rules: CompiledRules, rule_bus: RuleEventBus, light_arbiter: LightingArbiter):
         self._version: int = 0
         self.items: Items | None = None
         self.map: MapState | None = None
         self.player: PlayerState | None = None
         self.hero: HeroState | None = None
 
-        # Rule-engine state — populated by set_compiled_rules()
-        from src.rules.compiler import CompiledRules
-        self._compiled_rules: CompiledRules | None = None
+        self._compiled_rules = compiled_rules
+        self._rule_bus = rule_bus  # stamped with game/clock time so emitted events carry it
+        self._light_arbiter = light_arbiter  # committed once per processed update
         self._prev_items: Items | None = None
         self._prev_hero: HeroState | None = None
-        self._light_arbiter: LightingArbiter | None = None
 
-    def set_light_arbiter(self, arbiter: LightingArbiter) -> None:
-        """Attach the lighting arbiter, committed once per processed update."""
-        self._light_arbiter = arbiter
-
-    def set_compiled_rules(self, compiled_rules) -> None:
-        """Attach precompiled rule monitors. Called once at startup."""
-        self._compiled_rules = compiled_rules
-
-    def set(self, data: dict):
+    def update(self, data: dict):
         # This method is synchronous. Only CPU-bound operations (parsing, diffing,
         # state comparisons) belong here. For I/O-bound work such as playing sounds
         # or controlling lights, monitors must emit an event onto RuleEventBus and
@@ -58,9 +51,9 @@ class GameState:
         new_map = parse_map(map) if map else None
         self._handle_match_change(new_map)
         self.map = new_map
+        self._rule_bus.set_time(new_map.game_time, new_map.clock_time)
         self._run_rule_monitors()
-        if self._light_arbiter:
-            self._light_arbiter.commit()
+        self._light_arbiter.commit()
 
     def version(self) -> int:
         return self._version
@@ -70,25 +63,20 @@ class GameState:
         new_id = new_map.matchid if new_map else None
         if new_id != old_id:
             self._clear_monitors()
-            if self._light_arbiter:
-                self._light_arbiter.clear_all()
+            self._light_arbiter.clear_all()
             self._prev_items = None
             self._prev_hero = None
             logger.info(f"Match changed from {old_id} to {new_id}")
 
     def _clear_monitors(self) -> None:
-        if self._compiled_rules:
-            for m in self._compiled_rules.item_monitors:
-                m.clear()
-            for m in self._compiled_rules.map_monitors:
-                m.clear()
-            for m in self._compiled_rules.hero_monitors:
-                m.clear()
+        for m in self._compiled_rules.item_monitors:
+            m.clear()
+        for m in self._compiled_rules.map_monitors:
+            m.clear()
+        for m in self._compiled_rules.hero_monitors:
+            m.clear()
 
     def _run_rule_monitors(self) -> None:
-        if not self._compiled_rules:
-            return
-
         if self.map:
             for monitor in self._compiled_rules.map_monitors:
                 monitor.evaluate(self.map)
