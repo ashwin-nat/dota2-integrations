@@ -27,6 +27,7 @@ jobs:
           merge-multiple: true
       - run: |
           cp rules.example.json assets/rules.json
+          (cd .agents && zip -r ../assets/dota2-integrations-skills.zip skills)
           gh release create "${{ inputs.tag }}" assets/* --target "${{ github.sha }}" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
