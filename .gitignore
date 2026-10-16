@@ -13,3 +13,9 @@ media/*
 
 # Local junction/symlink to .agents/skills for tools that only read .claude/skills
 .claude/skills
+
+# Build output
+build/
+dist/
+*.spec
+!rules.example.json

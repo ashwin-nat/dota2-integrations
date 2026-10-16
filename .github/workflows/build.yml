@@ -1,0 +1,43 @@
+# Builds the current codebase for Windows and macOS and uploads the results as workflow artifacts.
+# Run manually from the Actions tab; release.yml reuses it.
+name: Build
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset: dota2-integrations-windows.exe
+          - os: macos-latest
+            asset: dota2-integrations-mac.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          uv run pyinstaller --onefile --paths . --name dota2-integrations src/main.py
+          mv dist/dota2-integrations.exe "dist/${{ matrix.asset }}"
+        shell: bash
+
+      # --windowed makes PyInstaller produce a dist/dota2-integrations.app bundle
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          uv run pyinstaller --windowed --paths . --name dota2-integrations \
+            --osx-bundle-identifier com.dota2integrations.app src/main.py
+          cd dist && zip -r "${{ matrix.asset }}" dota2-integrations.app
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error

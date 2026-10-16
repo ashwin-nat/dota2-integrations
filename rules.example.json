@@ -1,0 +1,14 @@
+{
+    "rules": [
+        {"id": "blink_used", "monitor": {"type": "item", "target": "item_blink", "event": "COOLDOWN_STARTED"}, "actions": []},
+        {"id": "blink_ready", "monitor": {"type": "item", "target": "item_blink", "event": "COOLDOWN_READY"}, "actions": []},
+        {"id": "bkb_purchased", "monitor": {"type": "item", "target": "item_black_king_bar", "event": "ITEM_ACQUIRED"}, "actions": []},
+        {"id": "midas_charged", "monitor": {"type": "midas", "event": "CHARGED"}, "actions": []},
+        {"id": "daytime_started", "monitor": {"type": "map", "event": "DAYTIME_STARTED"}, "actions": []},
+        {"id": "nighttime_started", "monitor": {"type": "map", "event": "NIGHTTIME_STARTED"}, "actions": []},
+        {"id": "hero_killed", "monitor": {"type": "hero", "event": "HERO_KILLED"}, "actions": []},
+        {"id": "hero_respawned", "monitor": {"type": "hero", "event": "HERO_RESPAWNED"}, "actions": []}
+    ],
+    "sound": {"volume": 100},
+    "lighting": {"enabled": false, "vendor": "log"}
+}

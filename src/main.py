@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +29,7 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     # Suppress debugger-induced noise: pausing execution leaves the socket in a
     # state where IOCP accept() fails with WinError 64, and aiohttp's
     # _request_factory is None because the handler hasn't resumed yet.
-    if isinstance(exc, OSError) and exc.winerror == 64:
+    if isinstance(exc, OSError) and getattr(exc, "winerror", None) == 64:
         return
     if isinstance(exc, TypeError) and "'NoneType' object is not callable" in str(exc):
         return
@@ -84,6 +86,15 @@ async def main() -> None:
     await asyncio.gather(*tasks)
 
 
+def _enter_macos_app_dir() -> None:
+    """A Finder-launched .app starts in `/`, so keep rules.json, configs and logs in Application Support."""
+    if sys.platform == "darwin" and getattr(sys, "frozen", False):
+        app_dir = Path.home() / "Library" / "Application Support" / "dota2-integrations"
+        app_dir.mkdir(parents=True, exist_ok=True)
+        os.chdir(app_dir)
+
+
 if __name__ == "__main__":
+    _enter_macos_app_dir()
     setup_logging()
     asyncio.run(main())

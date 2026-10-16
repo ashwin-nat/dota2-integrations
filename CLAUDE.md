@@ -124,3 +124,11 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 ```
 
 `map_colours` is required when any rule uses `reset_light`. The plain array format remains supported for configs that don't use `reset_light`.
+
+## Build & Release
+
+```bash
+uv run pyinstaller --onefile --paths . --name dota2-integrations src/main.py   # -> dist/dota2-integrations.exe
+```
+
+`.github/workflows/build.yml` (manual) builds Windows (`.exe`) and macOS (`.app`, zipped) from the current code as workflow artifacts. `release.yml` (manual, takes a tag) reuses it and publishes a GitHub release with the binaries plus `rules.example.json` (shipped as `rules.json`: no sounds, lighting disabled, empty actions). The Windows exe reads `rules.json`, `lighting_config_*.json`, `logs/` and sound files from the directory it's run in; the macOS .app uses `~/Library/Application Support/dota2-integrations/` (it has no console).
