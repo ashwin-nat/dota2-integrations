@@ -1,6 +1,10 @@
 import asyncio
+import json
 import logging
+from datetime import datetime
 from pathlib import Path
+
+import aiofiles
 
 RULES_PATH = Path("rules.json")
 
@@ -55,7 +59,15 @@ async def main() -> None:
     async def ingest() -> None:
         while True:
             data = await queue.get()
-            state.update(data)
+            try:
+                state.update(data)
+            except Exception as e:
+                timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")
+                file_name = f"error_dump_{timestamp}.json"
+                async with aiofiles.open(file_name, "w") as f:
+                    await f.write(json.dumps(data, indent=2))
+                logger.exception(f"Error processing update: {e} \n Dumped data to {file_name}")
+
 
     tasks = [
         asyncio.create_task(ingest(), name="ingest"),
