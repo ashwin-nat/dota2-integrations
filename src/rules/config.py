@@ -57,12 +57,13 @@ class PlaySoundAction(BaseAction):
     file: str
     volume: int = Field(ge=0, le=100, default=100)
 
-    @field_validator("file")
-    @classmethod
-    def file_must_exist(cls, v: str) -> str:
-        if not Path(v).is_file():
-            raise ValueError(f"sound file not found: {v!r}")
-        return v
+    # Disabled actions may point at a file that isn't on disk yet, so a rule
+    # can be kept as a placeholder until its clip is added.
+    @model_validator(mode="after")
+    def file_must_exist(self) -> PlaySoundAction:
+        if self.enabled and not Path(self.file).is_file():
+            raise ValueError(f"sound file not found: {self.file!r}")
+        return self
 
 
 class LightAction(BaseAction):

@@ -21,6 +21,8 @@ uv run python -m src.main
 
 Listens on `http://127.0.0.1:6969`. Configure Dota 2 to POST to this address (see below).
 
+Open `http://127.0.0.1:6969/ui` to edit rules in the browser: pick items from a shop-style grid or abilities from a hero's page, attach sounds (with preview and drag-and-drop upload), light colours or webhooks, and save. Changes apply immediately without a restart.
+
 ## Dota 2 Configuration
 
 Create a config file at:

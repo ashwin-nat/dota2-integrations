@@ -18,7 +18,9 @@ Dota 2 GSI (Game State Integration) receiver. Accepts raw POST payloads from the
 uv run python -m src.main
 ```
 
-Listens on `http://127.0.0.1:6969`. Dota 2 sends POST requests to `/`.
+Listens on `http://127.0.0.1:6969` (override with the `GSI_PORT` env var). Dota 2 sends POST requests to `/`.
+
+A browser rules editor ("Rule Forge") is served on the same port at `http://127.0.0.1:6969/ui`. Saving there validates with `RulesConfig`, writes `rules.json`, and hot-reloads the rules (`reload_rules` in `main.py`); only lighting vendor/enabled changes need a restart.
 
 Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto-created on first run) and an optional `rules.json` in the project root.
 
@@ -48,6 +50,10 @@ src/
 ├── monitors/
 │   ├── base.py                # Monitor ABC
 │   └── day_night.py           # Legacy day/night monitor (pre-rule-engine)
+├── config_ui/
+│   ├── routes.py              # /ui editor + /api (config get/put, media list/upload, play, catalog)
+│   ├── catalog.py             # hero/ability/item names from dotaconstants, cached in .cache/catalog.json
+│   └── static/                # index.html, app.js, app.css (vanilla, no build step)
 ├── lighting/
 │   └── controller.py          # LightingController — Philips Hue RGB control
 └── sound/

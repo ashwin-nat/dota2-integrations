@@ -13,3 +13,6 @@ media/*
 
 # Local junction/symlink to .agents/skills for tools that only read .claude/skills
 .claude/skills
+
+# Cached Dota hero/item catalog for the rules editor
+.cache/

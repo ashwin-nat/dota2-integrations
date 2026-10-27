@@ -8,6 +8,7 @@ import aiofiles
 
 RULES_PATH = Path("rules.json")
 
+from src.config_ui import setup_config_ui
 from src.ingress.http_server import serve
 from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
@@ -56,6 +57,15 @@ async def main() -> None:
     logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
     # -------------------------
 
+    def reload_rules(config: RulesConfig) -> bool:
+        """Recompile rules saved from the editor. Returns True if a restart is still needed."""
+        rule_bus.reset()
+        arbiter.clear_all()
+        state.set_compiled_rules(compile_rules(config.rules, rule_bus))
+        sound.set_default_volume(config.sound.volume / 100)
+        # The lighting driver is built once at startup
+        return config.lighting != rules_config.lighting
+
     async def ingest() -> None:
         while True:
             data = await queue.get()
@@ -76,7 +86,10 @@ async def main() -> None:
             asyncio.create_task(coro, name=name)
             for name, coro in executor.worker_coroutines(rule_bus).items()
         ],
-        asyncio.create_task(serve(queue), name="http_server"),
+        asyncio.create_task(
+            serve(queue, lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound)),
+            name="http_server",
+        ),
     ]
 
     for task in tasks:

@@ -44,7 +44,7 @@ Every action has `enabled` (default `true`). Use it to switch an action off with
      2. If the exact key is there, use it.
      3. If not, don't guess. Ask the user to start the app, open demo mode with that hero **as their own hero** (GSI only reports the player's hero, not allies or enemies), wait for the match to load, then come back. Then grep the log again for the exact key.
 3. **Pick the actions.** The field-by-field details are in `config.py`. Notes per action:
-   - `play_sound`: `file` must exist on disk, relative to the project root; the app refuses to start otherwise. List `media/` and suggest existing files before inventing a path. `volume` is per action (0-100) and is scaled by the global `sound.volume`.
+   - `play_sound`: `file` must exist on disk, relative to the project root, when the action is enabled; the app refuses to start otherwise. A disabled action may name a clip that isn't there yet (the editor at `/ui` lists these under Sounds → Wanted). List `media/` and suggest existing files before inventing a path. `volume` is per action (0-100) and is scaled by the global `sound.volume`.
    - `light`: see the priority rules below.
    - `webhook`: `url` must be http(s). If you set `api_key`, also set `auth_type` (`bearer` / `header` / `query`). `cooldown` is in seconds and stops repeated calls.
 4. **Pick an `id`**: snake_case, unique, describing the trigger (e.g. `blink_used`, `hero_killed`).

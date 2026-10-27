@@ -61,6 +61,10 @@ class GameState:
         self._run_rule_monitors()
         self._light_arbiter.commit()
 
+    def set_compiled_rules(self, compiled_rules: CompiledRules) -> None:
+        """Swap in freshly compiled rules (config reload). New monitors start with empty state."""
+        self._compiled_rules = compiled_rules
+
     def version(self) -> int:
         return self._version
 

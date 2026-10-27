@@ -68,6 +68,11 @@ class RuleEventBus:
         self._listeners.setdefault(event_key, []).extend(actions)
         self._contexts[event_key] = context
 
+    def reset(self) -> None:
+        """Drop every registered listener, before recompiling rules on a config reload."""
+        self._listeners.clear()
+        self._contexts.clear()
+
     def emit(self, event_key: str) -> None:
         """Non-blocking: fan out each enabled action to its type queue."""
         actions = self._listeners.get(event_key, [])
