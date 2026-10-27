@@ -16,3 +16,9 @@ media/*
 
 # Cached Dota hero/item catalog for the rules editor
 .cache/
+
+# Build output
+build/
+dist/
+*.spec
+!rules.example.json

@@ -1,0 +1,33 @@
+# Run manually from the Actions tab with a tag name (e.g. v0.1.0): builds both platforms
+# and publishes a GitHub release with the binaries plus the starter rules.json.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          path: assets
+          merge-multiple: true
+      - run: |
+          cp rules.example.json assets/rules.json
+          (cd .agents && zip -r ../assets/dota2-integrations-skills.zip skills)
+          gh release create "${{ inputs.tag }}" assets/* --target "${{ github.sha }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
