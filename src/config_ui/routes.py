@@ -119,5 +119,6 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
     app.router.add_post("/api/media", upload_media)
     app.router.add_post("/api/play", play)
     app.router.add_get("/api/catalog", catalog)
-    if MEDIA_DIR.is_dir():
-        app.router.add_static("/media", MEDIA_DIR)
+    # A fresh install (e.g. the macOS app's Application Support dir) has no media/ yet
+    MEDIA_DIR.mkdir(exist_ok=True)
+    app.router.add_static("/media", MEDIA_DIR)

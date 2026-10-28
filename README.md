@@ -2,6 +2,24 @@
 
 Receives [Dota 2 GSI](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools/GSI) (Game State Integration) payloads and holds the latest snapshot in memory.
 
+## Download (no Python needed)
+
+Grab the latest build from the [Releases page](https://github.com/ashwin-nat/dota2-integrations/releases):
+
+- **Windows:** `dota2-integrations-windows.exe`. Put it in its own folder; `rules.json`, sounds and logs live next to it.
+- **Mac (Apple Silicon, M1 and later):** `dota2-integrations-mac.zip`
+- **Mac (Intel):** `dota2-integrations-mac-intel.zip`
+
+Starting the app opens the rules editor in your browser.
+
+**First launch on Mac:** the app isn't signed by Apple, so macOS blocks it the first time. Unzip it, move it to Applications, double-click it, then go to **System Settings → Privacy & Security** and click **Open Anyway**. If macOS says the app "is damaged", run this once in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/dota2-integrations.app
+```
+
+The Mac app keeps its settings, sounds and logs in `~/Library/Application Support/dota2-integrations/`.
+
 ## Requirements
 
 - Python 3.13+

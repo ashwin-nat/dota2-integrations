@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -89,7 +90,11 @@ async def main() -> None:
             for name, coro in executor.worker_coroutines(rule_bus).items()
         ],
         asyncio.create_task(
-            serve(queue, lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound)),
+            serve(
+                queue,
+                lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound),
+                on_started=_open_editor,
+            ),
             name="http_server",
         ),
     ]
@@ -97,6 +102,16 @@ async def main() -> None:
     for task in tasks:
         logger.info(f"Registered task: {task.get_name()}")
     await asyncio.gather(*tasks)
+
+
+def _open_editor(base_url: str) -> None:
+    """Open the rules editor in the default browser; the packaged app has no window of its own."""
+    if "--no-browser" in sys.argv or os.environ.get("GSI_NO_BROWSER"):
+        return
+    try:
+        webbrowser.open(f"{base_url}/ui")
+    except Exception as e:
+        logger.warning(f"Could not open browser: {e}")
 
 
 def _enter_macos_app_dir() -> None:

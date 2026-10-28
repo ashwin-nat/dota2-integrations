@@ -73,7 +73,7 @@ Finding device details:
 
 Write the device config yourself, with the secret fields (`password`, `local_key`) left blank. Then ask the user to fill those in themselves, so the secrets never pass through the chat. All `*.json` files are gitignored, so the file won't be committed.
 
-If the vendor config file is missing when the app starts, the app writes a blank template and exits. That exit is expected; it is not a crash.
+If lighting is enabled and the vendor config file is missing when the app starts, the app writes a blank template and keeps running with lights off (logged as a warning). Fill it in and restart.
 
 ## 4. Sounds
 

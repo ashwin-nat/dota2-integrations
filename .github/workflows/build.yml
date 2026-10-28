@@ -15,6 +15,9 @@ jobs:
             asset: dota2-integrations-windows.exe
           - os: macos-latest
             asset: dota2-integrations-mac.zip
+          # macos-latest is Apple Silicon only; Intel Macs need their own build
+          - os: macos-15-intel
+            asset: dota2-integrations-mac-intel.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -26,17 +29,22 @@ jobs:
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: |
-          uv run pyinstaller --onefile --paths . --name dota2-integrations src/main.py
+          uv run pyinstaller --onefile --paths . --name dota2-integrations \
+            --add-data "src/config_ui/static:src/config_ui/static" src/main.py
           mv dist/dota2-integrations.exe "dist/${{ matrix.asset }}"
         shell: bash
 
-      # --windowed makes PyInstaller produce a dist/dota2-integrations.app bundle
+      # --windowed makes PyInstaller produce a dist/dota2-integrations.app bundle.
+      # Zip with ditto, not zip -r: zip copies the bundle's symlinks as files, which
+      # breaks the code signature and macOS then reports the app as "damaged".
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |
           uv run pyinstaller --windowed --paths . --name dota2-integrations \
-            --osx-bundle-identifier com.dota2integrations.app src/main.py
-          cd dist && zip -r "${{ matrix.asset }}" dota2-integrations.app
+            --osx-bundle-identifier com.dota2integrations.app \
+            --add-data "src/config_ui/static:src/config_ui/static" src/main.py
+          codesign --verify --deep --strict dist/dota2-integrations.app
+          ditto -c -k --sequesterRsrc --keepParent dist/dota2-integrations.app "dist/${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v5
         with:
