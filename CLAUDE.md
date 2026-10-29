@@ -11,6 +11,7 @@ Dota 2 GSI (Game State Integration) receiver. Accepts raw POST payloads from the
 - `aiohttp` — HTTP server
 - `pydantic` — rule/action config validation
 - `uv` — dependency and environment management
+- `yt-dlp` — fetches audio from video links for the soundboard
 
 ## Running
 
@@ -21,6 +22,8 @@ uv run python -m src.main
 Listens on `http://127.0.0.1:6969` (override with the `GSI_PORT` env var). Dota 2 sends POST requests to `/`.
 
 A browser rules editor ("Rule Forge") is served on the same port at `http://127.0.0.1:6969/ui`. Saving there validates with `RulesConfig`, writes `rules.json`, and hot-reloads the rules (`reload_rules` in `main.py`); only lighting vendor/enabled changes need a restart.
+
+The editor's Soundboard tab (`src/config_ui/soundboard.py`) stores clips in `soundboard.json` with the WAV files in `media/soundboard/`, and saves each change immediately instead of through the Save button. The browser decodes the source and trims it to `MAX_CLIP_SECONDS` (5.2 s, as in Discord), then uploads a 16-bit WAV. Links are fetched server-side with yt-dlp (`POST /api/soundboard/fetch`, audio only, no ffmpeg needed), and the raw audio is returned for trimming in the browser.
 
 Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto-created on first run) and an optional `rules.json` in the project root.
 
@@ -53,6 +56,7 @@ src/
 ├── config_ui/
 │   ├── routes.py              # /ui editor + /api (config get/put, media list/upload, play, catalog)
 │   ├── catalog.py             # hero/ability/item names from dotaconstants, cached in .cache/catalog.json
+│   ├── soundboard.py          # soundboard clips API (create/edit/delete/play, link fetch via yt-dlp)
 │   └── static/                # index.html, app.js, app.css (vanilla, no build step)
 ├── lighting/
 │   └── controller.py          # LightingController — Philips Hue RGB control

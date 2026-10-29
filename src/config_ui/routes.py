@@ -10,6 +10,7 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from src.config_ui.catalog import load_catalog
+from src.config_ui.soundboard import setup_soundboard
 from src.rules.config import RulesConfig
 from src.sound import SoundManager
 
@@ -119,6 +120,7 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
     app.router.add_post("/api/media", upload_media)
     app.router.add_post("/api/play", play)
     app.router.add_get("/api/catalog", catalog)
+    setup_soundboard(app, sound)
     # A fresh install (e.g. the macOS app's Application Support dir) has no media/ yet
     MEDIA_DIR.mkdir(exist_ok=True)
     app.router.add_static("/media", MEDIA_DIR)

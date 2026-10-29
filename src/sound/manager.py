@@ -18,6 +18,9 @@ class SoundManager:
     def set_default_volume(self, volume: float) -> None:
         self._default_volume = volume
 
+    def stop_all(self) -> None:
+        pygame.mixer.stop()
+
     async def play(self, path: str, *, volume: float = 1.0) -> None:
         sound = await self._load(path)
         channel = sound.play()

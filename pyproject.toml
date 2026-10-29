@@ -12,6 +12,7 @@ dependencies = [
     "pygame>=2.6.1",
     "python-kasa>=0.10.2",
     "tinytuya>=1.15.0",
+    "yt-dlp>=2026.10.26",
 ]
 
 [dependency-groups]
