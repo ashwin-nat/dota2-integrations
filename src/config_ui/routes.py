@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -33,7 +34,13 @@ def _safe_filename(name: str) -> str:
     return f"{stem}{ext}"
 
 
-def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, sound: SoundManager) -> None:
+def setup_config_ui(
+    app: web.Application,
+    rules_path: Path,
+    reload: ReloadFn,
+    sound: SoundManager,
+    shutdown: Callable[[], None] | None = None,
+) -> None:
     """Mount the rules editor at /ui and its JSON API at /api on the GSI server's app."""
 
     async def index(_: web.Request) -> web.FileResponse:
@@ -102,6 +109,17 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
             return web.json_response({"heroes": [], "items": [], "offline": True})
         return web.json_response(data)
 
+    async def info(_: web.Request) -> web.Response:
+        return web.json_response({"data_dir": str(Path.cwd()), "can_shutdown": shutdown is not None})
+
+    async def power_off(_: web.Request) -> web.Response:
+        if shutdown is None:
+            return web.json_response({"ok": False, "error": "Shutdown isn't available"}, status=400)
+        logger.info("Shutdown requested from the editor")
+        # Give the response time to reach the browser before the server stops
+        asyncio.get_running_loop().call_later(0.3, shutdown)
+        return web.json_response({"ok": True})
+
     async def redirect_ui(_: web.Request) -> web.Response:
         raise web.HTTPFound("/ui")
 
@@ -120,6 +138,8 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
     app.router.add_post("/api/media", upload_media)
     app.router.add_post("/api/play", play)
     app.router.add_get("/api/catalog", catalog)
+    app.router.add_get("/api/info", info)
+    app.router.add_post("/api/shutdown", power_off)
     setup_soundboard(app, sound)
     # A fresh install (e.g. the macOS app's Application Support dir) has no media/ yet
     MEDIA_DIR.mkdir(exist_ok=True)

@@ -86,7 +86,9 @@ async function api(path, opts = {}) {
 }
 
 async function loadAll() {
-  const [config, media, board] = await Promise.all([api("/api/config"), api("/api/media"), api("/api/soundboard")]);
+  const [config, media, board, info] = await Promise.all([api("/api/config"), api("/api/media"), api("/api/soundboard"), api("/api/info")]);
+  S.dataDir = info.data_dir;
+  $("#power").hidden = !info.can_shutdown;
   S.config = config;
   S.media = media;
   S.clips = board.clips;
@@ -229,6 +231,25 @@ async function save() {
   }
 }
 
+async function powerOff() {
+  const unsaved = isDirty() ? "\n\nYou have unsaved changes. They will be lost." : "";
+  if (!confirm(`Turn off Rule Forge?\n\nGame sounds and lights stop until you open the app again.${unsaved}`)) return;
+  try {
+    await api("/api/shutdown", { method: "POST" });
+  } catch (e) {
+    toast(`Couldn't turn off: ${e.message}`, "err");
+    return;
+  }
+  S.config = null; // nothing left to protect in beforeunload
+  previewAudio?.pause();
+  document.body.replaceChildren(h("div", { class: "off-screen" },
+    h("div", { class: "off-glyph" }, "⏻"),
+    h("h1", {}, "Rule Forge is off"),
+    h("p", {}, "Open the app again to bring back your sounds, lights and this editor. You can close this tab."),
+    S.dataDir ? h("p", { class: "hint" }, "Your rules, sounds and logs are in ", h("code", {}, S.dataDir)) : null));
+  document.title = "Rule Forge (off)";
+}
+
 // ---- Toasts ----
 
 function toast(content, cls = "", ms = 4000) {
@@ -298,6 +319,7 @@ $("#master-volume").addEventListener("input", (e) => {
 $("#lighting-enabled").addEventListener("change", (e) => { S.config.lighting.enabled = e.target.checked; markDirty(); });
 $("#lighting-vendor").addEventListener("change", (e) => { S.config.lighting.vendor = e.target.value; markDirty(); });
 $("#save").addEventListener("click", save);
+$("#power").addEventListener("click", powerOff);
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); if (isDirty()) save(); }
 });

@@ -41,6 +41,8 @@ Listens on `http://127.0.0.1:6969`. Configure Dota 2 to POST to this address (se
 
 Open `http://127.0.0.1:6969/ui` to edit rules in the browser: pick items from a shop-style grid or abilities from a hero's page, attach sounds (with preview and drag-and-drop upload), light colours or webhooks, and save. Changes apply immediately without a restart.
 
+The ⏻ button at the top right turns the app off: it stops the server and frees the port, which is handy for the macOS app because it has no window to quit from.
+
 The **Soundboard** tab works like Discord's soundboard. Add a clip from an audio file, a video file (.mp4, .webm, .mov) or a link (YouTube, Twitch clips, TikTok, X and other sites yt-dlp supports). Trim it to at most 5.2 seconds on the waveform, then give it a name, an emoji and a volume. Clicking a tile plays the clip on this PC's speakers. Clips are saved as WAV files in `media/soundboard/`, and their details go in `soundboard.json`.
 
 ## Dota 2 Configuration

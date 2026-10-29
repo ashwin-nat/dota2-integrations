@@ -142,6 +142,6 @@ uv run pyinstaller --onefile --paths . --name dota2-integrations \
   --add-data "src/config_ui/static:src/config_ui/static" src/main.py   # -> dist/dota2-integrations.exe
 ```
 
-The `--add-data` is required: without the editor's static files the server crashes on startup. On startup the app opens the editor (`/ui`) in the default browser; pass `--no-browser` or set `GSI_NO_BROWSER=1` to skip that.
+The `--add-data` is required: without the editor's static files the server crashes on startup. On startup the app opens the editor (`/ui`) in the default browser; pass `--no-browser` or set `GSI_NO_BROWSER=1` to skip that. The editor's power button (`POST /api/shutdown`) sets the stop event in `main()`, which cancels every task so the port is closed before the process exits.
 
 `.github/workflows/build.yml` (manual) builds Windows (`.exe`) and macOS (`.app` for Apple Silicon and Intel, zipped with `ditto` so the bundle's symlinks and signature survive) from the current code as workflow artifacts. `release.yml` (manual, takes a tag) reuses it and publishes a GitHub release with the binaries plus `rules.example.json` (shipped as `rules.json`: no sounds, lighting disabled, empty actions) and a zip of `.agents/skills`. The Windows exe reads `rules.json`, `lighting_config_*.json`, `logs/` and sound files from the directory it's run in; the macOS .app uses `~/Library/Application Support/dota2-integrations/` (it has no console).
