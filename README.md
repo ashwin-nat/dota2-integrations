@@ -43,7 +43,7 @@ Open `http://127.0.0.1:6969/ui` to edit rules in the browser: pick items from a 
 
 The ⏻ button at the top right turns the app off: it stops the server and frees the port, which is handy for the macOS app because it has no window to quit from.
 
-The **Soundboard** tab works like Discord's soundboard. Add a clip from an audio file, a video file (.mp4, .webm, .mov) or a link (YouTube, Twitch clips, TikTok, X and other sites yt-dlp supports). Trim it to at most 5.2 seconds on the waveform, then give it a name, an emoji and a volume. Clicking a tile plays the clip on this PC's speakers. Clips are saved as WAV files in `media/soundboard/`, and their details go in `soundboard.json`.
+The **Soundboard** tab works like Discord's soundboard. Add a clip from an audio file, a video file (.mp4, .webm, .mov) or a link (YouTube, Twitch clips, TikTok, X and other sites yt-dlp supports). Trim it to at most 5.2 seconds on the waveform, then give it a name, an emoji and a volume. Clicking a tile plays the clip on this PC's speakers. Each clip is saved as an MP3 named after it (`media/<name>.mp3`), so you can also pick it as the sound for items, abilities and game events. Renaming a clip renames the file and updates the rules that use it. Deleting a clip switches those rule sounds off. Clip details (emoji, volume) are kept in `soundboard.json`.
 
 ## Dota 2 Configuration
 

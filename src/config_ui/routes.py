@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Callable
 
@@ -11,6 +10,7 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from src.config_ui.catalog import load_catalog
+from src.config_ui.files import AUDIO_EXTENSIONS, MEDIA_DIR, safe_filename
 from src.config_ui.soundboard import setup_soundboard
 from src.rules.config import RulesConfig
 from src.sound import SoundManager
@@ -18,20 +18,11 @@ from src.sound import SoundManager
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
-MEDIA_DIR = Path("media")
-AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg"}
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 # Called with the validated config after it has been written to disk.
 # Returns True when a change needs an app restart to take effect.
 ReloadFn = Callable[[RulesConfig], bool]
-
-
-def _safe_filename(name: str) -> str:
-    name = Path(name).name
-    stem, ext = Path(name).stem, Path(name).suffix.lower()
-    stem = re.sub(r"[^\w\- ]+", "", stem).strip() or "clip"
-    return f"{stem}{ext}"
 
 
 def setup_config_ui(
@@ -77,7 +68,7 @@ def setup_config_ui(
         if field is None or not getattr(field, "filename", None):
             return web.json_response({"ok": False, "error": "No file uploaded"}, status=400)
         # ?name= saves the clip under the file name a rule already expects
-        name = _safe_filename(request.query.get("name") or field.filename)  # type: ignore[union-attr]
+        name = safe_filename(request.query.get("name") or field.filename)  # type: ignore[union-attr]
         if Path(name).suffix not in AUDIO_EXTENSIONS:
             return web.json_response({"ok": False, "error": "Only .mp3, .wav and .ogg files are supported"}, status=400)
         MEDIA_DIR.mkdir(exist_ok=True)
@@ -140,7 +131,7 @@ def setup_config_ui(
     app.router.add_get("/api/catalog", catalog)
     app.router.add_get("/api/info", info)
     app.router.add_post("/api/shutdown", power_off)
-    setup_soundboard(app, sound)
+    setup_soundboard(app, sound, rules_path, reload)
     # A fresh install (e.g. the macOS app's Application Support dir) has no media/ yet
     MEDIA_DIR.mkdir(exist_ok=True)
     app.router.add_static("/media", MEDIA_DIR)
