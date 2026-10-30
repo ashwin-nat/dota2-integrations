@@ -10,7 +10,7 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from src.config_ui.catalog import load_catalog
-from src.config_ui.soundboard import setup_soundboard
+from src.config_ui.soundboard import CLIPS_DIR, setup_soundboard
 from src.rules.config import RulesConfig
 from src.sound import SoundManager
 
@@ -90,7 +90,7 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
         path = Path(body.get("file", ""))
-        if path.parent != MEDIA_DIR or not path.is_file():
+        if path.parent not in (MEDIA_DIR, CLIPS_DIR) or not path.is_file():
             return web.json_response({"ok": False, "error": "Unknown sound file"}, status=400)
         volume = max(0, min(100, int(body.get("volume", 100))))
         await sound.play(str(path), volume=volume / 100)

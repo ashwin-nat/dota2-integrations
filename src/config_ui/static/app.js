@@ -157,7 +157,10 @@ const isBaseline = (monitor) => monitor.type === "map";
 const hex = (a) => "#" + [a.r, a.g, a.b].map((v) => v.toString(16).padStart(2, "0")).join("");
 const rgb = (hexStr) => ({ r: parseInt(hexStr.slice(1, 3), 16), g: parseInt(hexStr.slice(3, 5), 16), b: parseInt(hexStr.slice(5, 7), 16) });
 const fileName = (file) => file.replace(/^media\//, "");
-const hasMedia = (file) => S.media.some((m) => m.file === file);
+const clipFor = (file) => S.clips.find((c) => c.file === file);
+const hasMedia = (file) => S.media.some((m) => m.file === file) || !!clipFor(file);
+// Rules store the clip's wav path; show its soundboard name instead of the id
+const soundLabel = (file) => { const c = clipFor(file); return c ? `${c.emoji || "🔊"} ${c.name}` : fileName(file); };
 
 function describeTrigger(m) {
   const ev = (list) => list.find((e) => e.event === m.event)?.label || m.event;
@@ -349,7 +352,7 @@ function renderRules() {
     const d = describeTrigger(r.monitor);
     const acts = r.actions.map((a) => {
       const off = a.enabled === false ? "off" : "";
-      if (a.type === "play_sound") return h("span", { class: `chip ${off} ${hasMedia(a.file) ? "" : "missing"}`, title: a.file }, "♪ ", fileName(a.file), ` · ${a.volume}%`);
+      if (a.type === "play_sound") return h("span", { class: `chip ${off} ${hasMedia(a.file) ? "" : "missing"}`, title: a.file }, "♪ ", soundLabel(a.file), ` · ${a.volume}%`);
       if (a.type === "light") return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline");
       return h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook");
     });
@@ -569,7 +572,11 @@ function renderSoundboard() {
   const search = h("input", { type: "search", placeholder: "Search sounds…", value: S.clipQuery, "aria-label": "Search sounds" });
   search.addEventListener("input", (e) => { S.clipQuery = e.target.value; rerenderKeepFocus(search); });
 
+  const usage = new Map();
+  for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound") usage.set(a.file, (usage.get(a.file) || 0) + 1);
+
   const tile = (c) => {
+    const used = usage.get(c.file);
     const el = h("div", {
       class: "sb-tile", role: "button", tabindex: "0", title: `Play ${c.name} on this PC`,
       onclick: () => playClip(c, el),
@@ -577,6 +584,7 @@ function renderSoundboard() {
     },
     h("span", { class: "sb-emoji" }, c.emoji || "🔊"),
     h("span", { class: "sb-name" }, c.name),
+    used ? h("span", { class: "hint", title: "Rule actions using this sound" }, `used ×${used}`) : null,
     h("span", { class: "sb-tools" },
       playButton(c.file, () => c.volume),
       h("button", { class: "sb-tool", title: "Edit", "aria-label": `Edit ${c.name}`, onclick: (e) => { e.stopPropagation(); openClipEditor({ clip: c }); } }, "✎")));
@@ -1021,7 +1029,7 @@ function renderEventBody(ev) {
   const changed = () => { markDirty(); render(); };
 
   const add = (action) => { ensureRule(monitor).actions.push(action); changed(); };
-  const firstSound = S.media[0]?.file;
+  const firstSound = S.media[0]?.file ?? S.clips[0]?.file;
 
   return h("div", { class: "event-body" },
     h("p", { class: "event-desc" }, ev.desc),
@@ -1044,8 +1052,15 @@ function renderAction(rule, a, monitor, changed) {
   if (a.type === "play_sound") {
     const known = hasMedia(a.file);
     const options = S.media.map((m) => h("option", { value: m.file, selected: m.file === a.file }, m.name));
+    if (S.clips.length) options.push(h("optgroup", { label: "Soundboard" },
+      S.clips.map((c) => h("option", { value: c.file, selected: c.file === a.file }, soundLabel(c.file)))));
     if (!known) options.unshift(h("option", { value: a.file, selected: true }, `⚠ ${fileName(a.file)} (missing)`));
-    const sel = h("select", { "aria-label": "Sound file", onchange: (e) => { a.file = e.target.value; changed(); } }, options);
+    const sel = h("select", { "aria-label": "Sound file", onchange: (e) => {
+      a.file = e.target.value;
+      const c = clipFor(a.file);
+      if (c) a.volume = c.volume;
+      changed();
+    } }, options);
     const out = h("output", {}, `${a.volume}%`);
     const vol = h("input", { type: "range", min: 0, max: 100, value: a.volume, "aria-label": "Volume",
       oninput: (e) => { a.volume = +e.target.value; out.value = `${a.volume}%`; markDirty(); } });

@@ -42,11 +42,17 @@ class Clip(ClipMeta):
 def _load() -> list[Clip]:
     if not SOUNDBOARD_PATH.exists():
         return []
-    return [Clip.model_validate(c) for c in json.loads(SOUNDBOARD_PATH.read_text()).get("clips", [])]
+    text = SOUNDBOARD_PATH.read_text(encoding="utf-8").strip()
+    if not text:
+        return []
+    return [Clip.model_validate(c) for c in json.loads(text).get("clips", [])]
 
 
 def _save(clips: list[Clip]) -> None:
-    SOUNDBOARD_PATH.write_text(json.dumps({"clips": [c.model_dump() for c in clips]}, indent=4, ensure_ascii=False))
+    # Encode before opening so a failure can't truncate the existing file. UTF-8 explicitly:
+    # the Windows default (cp1252) can't hold emoji.
+    data = json.dumps({"clips": [c.model_dump() for c in clips]}, indent=4, ensure_ascii=False)
+    SOUNDBOARD_PATH.write_bytes(data.encode("utf-8"))
 
 
 def _errors(e: ValidationError) -> list[dict]:
