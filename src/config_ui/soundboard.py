@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import secrets
@@ -9,6 +10,7 @@ import wave
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
+import lameenc
 from aiohttp import web
 from pydantic import BaseModel, Field, ValidationError
 
@@ -20,7 +22,8 @@ SOUNDBOARD_PATH = Path("soundboard.json")
 CLIPS_DIR = Path("media/soundboard")
 # Same limit as Discord's soundboard. The editor trims to this before upload.
 MAX_CLIP_SECONDS = 5.2
-# A 5.2 s clip as 48 kHz 16-bit stereo WAV is about 1 MB
+MP3_KBPS = 128
+# The editor uploads a 16-bit WAV (about 1 MB for 5.2 s at 48 kHz stereo); the server stores it as MP3
 MAX_CLIP_BYTES = 2 * 1024 * 1024
 # Limits for audio pulled from a link (YouTube etc.) before it is trimmed in the browser
 MAX_SOURCE_SECONDS = 20 * 60
@@ -59,12 +62,22 @@ def _errors(e: ValidationError) -> list[dict]:
     return [{"loc": list(err["loc"]), "msg": err["msg"]} for err in e.errors()]
 
 
-def _wav_duration(path: Path) -> float | None:
+def _wav_to_mp3(data: bytes) -> tuple[bytes, float] | None:
+    """Encode an uploaded 16-bit PCM WAV as MP3. Returns (mp3 bytes, seconds), or None if it isn't a usable WAV."""
     try:
-        with wave.open(str(path), "rb") as w:
-            return w.getnframes() / w.getframerate()
-    except (wave.Error, EOFError, ZeroDivisionError):
+        with wave.open(io.BytesIO(data), "rb") as w:
+            channels, rate, width, frames = w.getnchannels(), w.getframerate(), w.getsampwidth(), w.getnframes()
+            pcm = w.readframes(frames)
+    except (wave.Error, EOFError):
         return None
+    if width != 2 or channels not in (1, 2) or rate <= 0 or frames == 0:
+        return None
+    enc = lameenc.Encoder()
+    enc.set_bit_rate(MP3_KBPS)
+    enc.set_in_sample_rate(rate)
+    enc.set_channels(channels)
+    enc.set_quality(2)
+    return bytes(enc.encode(pcm) + enc.flush()), frames / rate
 
 
 def _download_audio(url: str, out_dir: Path) -> tuple[Path, str]:
@@ -96,7 +109,7 @@ def _download_audio(url: str, out_dir: Path) -> tuple[Path, str]:
 
 
 def setup_soundboard(app: web.Application, sound: SoundManager) -> None:
-    """Mount the soundboard API: trimmed WAV clips with a name, emoji and volume, played on the app's speakers."""
+    """Mount the soundboard API: trimmed MP3 clips with a name, emoji and volume, played on the app's speakers."""
 
     def find(clips: list[Clip], clip_id: str) -> Clip:
         for c in clips:
@@ -123,18 +136,17 @@ def setup_soundboard(app: web.Application, sound: SoundManager) -> None:
 
         CLIPS_DIR.mkdir(parents=True, exist_ok=True)
         clip_id = secrets.token_hex(4)
-        dest = CLIPS_DIR / f"{clip_id}.wav"
-        size = 0
-        with dest.open("wb") as f:
-            while chunk := await file_field.read_chunk():  # type: ignore[union-attr]
-                size += len(chunk)
-                if size > MAX_CLIP_BYTES:
-                    break
-                f.write(chunk)
-        duration = _wav_duration(dest) if size <= MAX_CLIP_BYTES else None
-        if duration is None or duration > MAX_CLIP_SECONDS + 0.05:
-            dest.unlink()
+        dest = CLIPS_DIR / f"{clip_id}.mp3"
+        upload = bytearray()
+        while chunk := await file_field.read_chunk():  # type: ignore[union-attr]
+            upload += chunk
+            if len(upload) > MAX_CLIP_BYTES:
+                break
+        encoded = _wav_to_mp3(bytes(upload)) if len(upload) <= MAX_CLIP_BYTES else None
+        if encoded is None or encoded[1] > MAX_CLIP_SECONDS + 0.05:
             return web.json_response({"ok": False, "error": f"Clips must be a WAV of at most {MAX_CLIP_SECONDS} seconds"}, status=400)
+        mp3, duration = encoded
+        dest.write_bytes(mp3)
 
         clip = Clip(id=clip_id, file=dest.as_posix(), duration=round(duration, 3), **meta.model_dump())
         _save([*_load(), clip])
