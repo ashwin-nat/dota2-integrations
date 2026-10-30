@@ -86,7 +86,9 @@ async function api(path, opts = {}) {
 }
 
 async function loadAll() {
-  const [config, media, board] = await Promise.all([api("/api/config"), api("/api/media"), api("/api/soundboard")]);
+  const [config, media, board, info] = await Promise.all([api("/api/config"), api("/api/media"), api("/api/soundboard"), api("/api/info")]);
+  S.dataDir = info.data_dir;
+  $("#power").hidden = !info.can_shutdown;
   S.config = config;
   S.media = media;
   S.clips = board.clips;
@@ -232,6 +234,25 @@ async function save() {
   }
 }
 
+async function powerOff() {
+  const unsaved = isDirty() ? "\n\nYou have unsaved changes. They will be lost." : "";
+  if (!confirm(`Turn off Rule Forge?\n\nGame sounds and lights stop until you open the app again.${unsaved}`)) return;
+  try {
+    await api("/api/shutdown", { method: "POST" });
+  } catch (e) {
+    toast(`Couldn't turn off: ${e.message}`, "err");
+    return;
+  }
+  S.config = null; // nothing left to protect in beforeunload
+  previewAudio?.pause();
+  document.body.replaceChildren(h("div", { class: "off-screen" },
+    h("div", { class: "off-glyph" }, "⏻"),
+    h("h1", {}, "Rule Forge is off"),
+    h("p", {}, "Open the app again to bring back your sounds, lights and this editor. You can close this tab."),
+    S.dataDir ? h("p", { class: "hint" }, "Your rules, sounds and logs are in ", h("code", {}, S.dataDir)) : null));
+  document.title = "Rule Forge (off)";
+}
+
 // ---- Toasts ----
 
 function toast(content, cls = "", ms = 4000) {
@@ -301,6 +322,7 @@ $("#master-volume").addEventListener("input", (e) => {
 $("#lighting-enabled").addEventListener("change", (e) => { S.config.lighting.enabled = e.target.checked; markDirty(); });
 $("#lighting-vendor").addEventListener("change", (e) => { S.config.lighting.vendor = e.target.value; markDirty(); });
 $("#save").addEventListener("click", save);
+$("#power").addEventListener("click", powerOff);
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); if (isDirty()) save(); }
 });
@@ -548,7 +570,28 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const fmtTime = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, "0")}`;
 
 async function refreshClips() {
-  S.clips = (await api("/api/soundboard")).clips;
+  // Clips are files in media/, so the rule sound pickers need the new list too
+  const [board, media] = await Promise.all([api("/api/soundboard"), api("/api/media")]);
+  S.clips = board.clips;
+  S.media = media;
+}
+
+const ruleUses = (file) => S.config.rules.filter((r) => r.actions.some((a) => a.type === "play_sound" && a.file === file)).length;
+
+// The server already rewrote rules.json for a renamed (to) or deleted (to = null) clip.
+// Mirror that in the editor's copy and its saved snapshot so unsaved edits stay intact.
+function applyClipFileChange(from, to) {
+  const fix = (cfg) => {
+    for (const r of cfg.rules) for (const a of r.actions) {
+      if (a.type !== "play_sound" || a.file !== from) continue;
+      if (to) a.file = to; else a.enabled = false;
+    }
+  };
+  fix(S.config);
+  const saved = JSON.parse(S.saved);
+  fix(saved);
+  S.saved = JSON.stringify(saved);
+  renderStatus();
 }
 
 async function playClip(clip, tile) {
@@ -578,7 +621,8 @@ function renderSoundboard() {
   const tile = (c) => {
     const used = usage.get(c.file);
     const el = h("div", {
-      class: "sb-tile", role: "button", tabindex: "0", title: `Play ${c.name} on this PC`,
+      class: "sb-tile", role: "button", tabindex: "0",
+      title: `Play ${c.name} on this PC\n${fileName(c.file)}${ruleUses(c.file) ? ` · used by ${ruleUses(c.file)} rule(s)` : ""}`,
       onclick: () => playClip(c, el),
       onkeydown: (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); playClip(c, el); } },
     },
@@ -600,7 +644,7 @@ function renderSoundboard() {
     h("div", { class: "board-head" }, h("h1", {}, "Soundboard"), search,
       h("button", { class: "btn btn-sm", title: "Stop every sound playing on this PC", onclick: () => api("/api/soundboard/stop", { method: "POST" }) }, "■ Stop all"),
       h("button", { class: "btn btn-gold btn-sm", onclick: () => openClipEditor() }, "+ Add sound")),
-    h("p", { class: "hint" }, `Click a sound to play it on this PC's speakers. ▶ previews it in the browser only. Clips can be up to ${S.maxClip} seconds, cut from an audio file, a video, or a YouTube link.`),
+    h("p", { class: "hint" }, `Click a sound to play it on this PC's speakers. ▶ previews it in the browser only. Clips can be up to ${S.maxClip} seconds, cut from an audio file, a video, or a YouTube link. Each clip is saved as an MP3 named after it, so you can also pick it as the sound for items, abilities and game events.`),
     grid,
     !S.clips.length ? h("p", { class: "hint sb-empty" }, "No sounds yet. Drop an audio or video file on the board, or click Add sound.") : null,
     q && !clips.length ? h("p", { class: "hint" }, `No sounds match “${S.clipQuery}”.`) : null,
@@ -736,7 +780,8 @@ function openClipEditor({ clip, file } = {}) {
   }
 
   async function decode(data) {
-    ctx ??= new AudioContext();
+    // 44.1 kHz whatever the device's rate, so the server's MP3 encoder always accepts it
+    ctx ??= new AudioContext({ sampleRate: 44100 });
     return ctx.decodeAudioData(data);
   }
 
@@ -939,7 +984,8 @@ function openClipEditor({ clip, file } = {}) {
     submit.disabled = true;
     try {
       if (clip) {
-        await api(`/api/soundboard/${clip.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(meta) });
+        const res = await api(`/api/soundboard/${clip.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(meta) });
+        if (res.renamed) applyClipFileChange(res.renamed.from, res.renamed.to);
       } else {
         const form = new FormData();
         form.append("meta", JSON.stringify(meta));
@@ -958,9 +1004,12 @@ function openClipEditor({ clip, file } = {}) {
   }
 
   async function onDelete() {
-    if (!confirm(`Delete “${clip.name}” from the soundboard?`)) return;
+    const uses = ruleUses(clip.file);
+    const note = uses ? `\n\nIt's the sound for ${uses} rule(s). Those sounds will be switched off.` : "";
+    if (!confirm(`Delete “${clip.name}” from the soundboard? This also deletes ${fileName(clip.file)}.${note}`)) return;
     try {
       await api(`/api/soundboard/${clip.id}`, { method: "DELETE" });
+      applyClipFileChange(clip.file, null);
       await refreshClips();
       close();
       toast(`Deleted ${clip.name}`, "ok");

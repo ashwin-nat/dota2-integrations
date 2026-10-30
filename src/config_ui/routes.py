@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Callable
 
@@ -10,15 +10,14 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from src.config_ui.catalog import load_catalog
-from src.config_ui.soundboard import CLIPS_DIR, setup_soundboard
+from src.config_ui.files import AUDIO_EXTENSIONS, MEDIA_DIR, safe_filename
+from src.config_ui.soundboard import setup_soundboard
 from src.rules.config import RulesConfig
 from src.sound import SoundManager
 
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
-MEDIA_DIR = Path("media")
-AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg"}
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 # Called with the validated config after it has been written to disk.
@@ -26,14 +25,13 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 ReloadFn = Callable[[RulesConfig], bool]
 
 
-def _safe_filename(name: str) -> str:
-    name = Path(name).name
-    stem, ext = Path(name).stem, Path(name).suffix.lower()
-    stem = re.sub(r"[^\w\- ]+", "", stem).strip() or "clip"
-    return f"{stem}{ext}"
-
-
-def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, sound: SoundManager) -> None:
+def setup_config_ui(
+    app: web.Application,
+    rules_path: Path,
+    reload: ReloadFn,
+    sound: SoundManager,
+    shutdown: Callable[[], None] | None = None,
+) -> None:
     """Mount the rules editor at /ui and its JSON API at /api on the GSI server's app."""
 
     async def index(_: web.Request) -> web.FileResponse:
@@ -70,7 +68,7 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
         if field is None or not getattr(field, "filename", None):
             return web.json_response({"ok": False, "error": "No file uploaded"}, status=400)
         # ?name= saves the clip under the file name a rule already expects
-        name = _safe_filename(request.query.get("name") or field.filename)  # type: ignore[union-attr]
+        name = safe_filename(request.query.get("name") or field.filename)  # type: ignore[union-attr]
         if Path(name).suffix not in AUDIO_EXTENSIONS:
             return web.json_response({"ok": False, "error": "Only .mp3, .wav and .ogg files are supported"}, status=400)
         MEDIA_DIR.mkdir(exist_ok=True)
@@ -90,7 +88,7 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
         path = Path(body.get("file", ""))
-        if path.parent not in (MEDIA_DIR, CLIPS_DIR) or not path.is_file():
+        if path.parent != MEDIA_DIR or not path.is_file():
             return web.json_response({"ok": False, "error": "Unknown sound file"}, status=400)
         volume = max(0, min(100, int(body.get("volume", 100))))
         await sound.play(str(path), volume=volume / 100)
@@ -101,6 +99,17 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
         if data is None:
             return web.json_response({"heroes": [], "items": [], "offline": True})
         return web.json_response(data)
+
+    async def info(_: web.Request) -> web.Response:
+        return web.json_response({"data_dir": str(Path.cwd()), "can_shutdown": shutdown is not None})
+
+    async def power_off(_: web.Request) -> web.Response:
+        if shutdown is None:
+            return web.json_response({"ok": False, "error": "Shutdown isn't available"}, status=400)
+        logger.info("Shutdown requested from the editor")
+        # Give the response time to reach the browser before the server stops
+        asyncio.get_running_loop().call_later(0.3, shutdown)
+        return web.json_response({"ok": True})
 
     async def redirect_ui(_: web.Request) -> web.Response:
         raise web.HTTPFound("/ui")
@@ -120,7 +129,9 @@ def setup_config_ui(app: web.Application, rules_path: Path, reload: ReloadFn, so
     app.router.add_post("/api/media", upload_media)
     app.router.add_post("/api/play", play)
     app.router.add_get("/api/catalog", catalog)
-    setup_soundboard(app, sound)
+    app.router.add_get("/api/info", info)
+    app.router.add_post("/api/shutdown", power_off)
+    setup_soundboard(app, sound, rules_path, reload)
     # A fresh install (e.g. the macOS app's Application Support dir) has no media/ yet
     MEDIA_DIR.mkdir(exist_ok=True)
     app.router.add_static("/media", MEDIA_DIR)

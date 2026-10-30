@@ -48,6 +48,8 @@ async def main() -> None:
     await lighting.setup()
 
     queue: asyncio.Queue[dict] = asyncio.Queue()
+    # Set by the editor's power button
+    stop = asyncio.Event()
 
     # --- Rule engine setup ---
     sound = SoundManager(default_volume=rules_config.sound.volume / 100)
@@ -92,7 +94,7 @@ async def main() -> None:
         asyncio.create_task(
             serve(
                 queue,
-                lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound),
+                lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound, shutdown=stop.set),
                 on_started=_open_editor,
             ),
             name="http_server",
@@ -101,7 +103,16 @@ async def main() -> None:
 
     for task in tasks:
         logger.info(f"Registered task: {task.get_name()}")
-    await asyncio.gather(*tasks)
+    stopper = asyncio.create_task(stop.wait(), name="shutdown")
+    done, _ = await asyncio.wait([*tasks, stopper], return_when=asyncio.FIRST_COMPLETED)
+    # Cancelling the server task closes the port before the process exits
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    for task in done:
+        if task is not stopper and not task.cancelled() and task.exception():
+            raise task.exception()  # type: ignore[misc]
+    logger.info("Shut down")
 
 
 def _open_editor(base_url: str) -> None:
