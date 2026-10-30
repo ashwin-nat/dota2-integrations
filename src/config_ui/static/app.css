@@ -509,6 +509,25 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 .sb-add .sb-emoji { color: var(--gold); font-weight: 600; }
 .sb-empty { margin-top: 12px; }
 
+.sound-pick {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; font: inherit; color: var(--text); text-align: left; cursor: pointer;
+  background: linear-gradient(180deg, var(--panel-3), var(--panel));
+  border: 1px solid var(--line-2); border-radius: 8px;
+}
+.sound-pick:hover { border-color: var(--gold-lo); }
+.sound-pick.missing { border-color: var(--red); color: var(--red-hi); }
+.sound-pick-caret { color: var(--muted); font-size: 12px; }
+.sp-pop {
+  position: fixed; z-index: 40; padding: 10px;
+  background: linear-gradient(180deg, #1a2029, #12161c);
+  border: 1px solid var(--line-2); border-radius: 8px;
+  box-shadow: 0 0 0 1px #000, 0 12px 32px rgba(0,0,0,.7);
+}
+.sp-pop input[type=search] { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+.sp-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); overflow-y: auto; }
+.sb-tile.selected { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 40;
   display: grid; place-items: center; padding: 16px;

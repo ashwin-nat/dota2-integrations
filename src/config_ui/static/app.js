@@ -158,7 +158,9 @@ function nextPriority() {
 const isBaseline = (monitor) => monitor.type === "map";
 const hex = (a) => "#" + [a.r, a.g, a.b].map((v) => v.toString(16).padStart(2, "0")).join("");
 const rgb = (hexStr) => ({ r: parseInt(hexStr.slice(1, 3), 16), g: parseInt(hexStr.slice(3, 5), 16), b: parseInt(hexStr.slice(5, 7), 16) });
-const fileName = (file) => file.replace(/^media\//, "");
+const stripExt = (name) => name.replace(/\.[^.]+$/, "");
+const fileName = (file) => stripExt(file.replace(/^media\//, ""));
+const mediaLabel = (m) => stripExt(m.name);
 const hasMedia = (file) => S.media.some((m) => m.file === file);
 
 function describeTrigger(m) {
@@ -529,7 +531,7 @@ function renderSounds() {
         h("span", { class: "u" }, "drop a clip here"));
       makeDropTarget(row, async ([file]) => {
         // Keep the expected name but the dropped file's real extension
-        const path = await uploadFile(file, fileName(f).replace(/\.[^.]+$/, "") + file.name.slice(file.name.lastIndexOf(".")));
+        const path = await uploadFile(file, fileName(f) + file.name.slice(file.name.lastIndexOf(".")));
         if (!path) return;
         for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound" && a.file === f) Object.assign(a, { file: path, enabled: true });
         markDirty();
@@ -540,7 +542,7 @@ function renderSounds() {
     h("div", { class: "section-title" }, "Library", h("span", { class: "count" }, S.media.length)),
     h("div", { class: "sound-list" }, S.media.map((m) => h("div", { class: "sound-row" },
       playButton(m.file),
-      h("span", { class: "n", title: m.name }, m.name),
+      h("span", { class: "n", title: mediaLabel(m) }, mediaLabel(m)),
       h("span", { class: "u" }, usage.get(m.file) ? `used ×${usage.get(m.file)}` : "unused")))),
   ];
 }
@@ -1082,6 +1084,57 @@ function renderEventBody(ev) {
   );
 }
 
+const clipEmoji = (file) => S.clips.find((c) => c.file === file)?.emoji || "🔊";
+
+// Discord-style soundboard grid for choosing a rule's sound
+function openSoundPicker(anchor, selected, onPick) {
+  let query = "";
+  const grid = h("div", { class: "sb-grid sp-grid" });
+  const search = h("input", { type: "search", placeholder: "Search sounds…", "aria-label": "Search sounds" });
+  const close = () => {
+    pop.remove();
+    document.removeEventListener("keydown", onKey);
+    document.removeEventListener("mousedown", onOutside, true);
+    window.removeEventListener("resize", close);
+  };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const onOutside = (e) => { if (!pop.contains(e.target) && !anchor.contains(e.target)) close(); };
+
+  const fill = () => {
+    const q = query.trim().toLowerCase();
+    const items = S.media.filter((m) => !q || mediaLabel(m).toLowerCase().includes(q));
+    grid.replaceChildren(...(items.length ? items.map((m) => {
+      const pick = () => { close(); onPick(m.file); };
+      const clip = S.clips.find((c) => c.file === m.file);
+      return h("div", {
+        class: `sb-tile ${m.file === selected ? "selected" : ""}`, role: "button", tabindex: "0", title: fileName(m.file),
+        onclick: pick,
+        onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pick(); } },
+      },
+      h("span", { class: "sb-emoji" }, clipEmoji(m.file)),
+      h("span", { class: "sb-name" }, mediaLabel(m)),
+      h("span", { class: "sb-tools" }, playButton(m.file, () => clip?.volume ?? 100)));
+    }) : [h("p", { class: "hint" }, S.media.length ? "No sounds match." : "No sounds yet. Add some in the Soundboard tab.")]));
+  };
+  search.addEventListener("input", (e) => { query = e.target.value; fill(); });
+  fill();
+
+  const pop = h("div", { class: "sp-pop", role: "dialog", "aria-label": "Choose a sound" }, search, grid);
+  document.body.append(pop);
+  const r = anchor.getBoundingClientRect();
+  const width = Math.min(460, window.innerWidth - 16);
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+  const below = window.innerHeight - r.bottom, above = r.top;
+  const up = below < 280 && above > below;
+  Object.assign(pop.style, { width: `${width}px`, left: `${left}px` });
+  if (up) pop.style.bottom = `${window.innerHeight - r.top + 6}px`; else pop.style.top = `${r.bottom + 6}px`;
+  grid.style.maxHeight = `${Math.max(140, Math.min(360, (up ? above : below) - 80))}px`;
+  document.addEventListener("keydown", onKey);
+  document.addEventListener("mousedown", onOutside, true);
+  window.addEventListener("resize", close);
+  search.focus();
+}
+
 function renderAction(rule, a, monitor, changed) {
   const remove = () => { rule.actions.splice(rule.actions.indexOf(a), 1); changed(); };
   const enabled = h("label", { class: "toggle", title: "On / off" },
@@ -1092,9 +1145,12 @@ function renderAction(rule, a, monitor, changed) {
 
   if (a.type === "play_sound") {
     const known = hasMedia(a.file);
-    const options = S.media.map((m) => h("option", { value: m.file, selected: m.file === a.file }, m.name));
-    if (!known) options.unshift(h("option", { value: a.file, selected: true }, `⚠ ${fileName(a.file)} (missing)`));
-    const sel = h("select", { "aria-label": "Sound file", onchange: (e) => { a.file = e.target.value; changed(); } }, options);
+    const current = S.media.find((m) => m.file === a.file);
+    const sel = h("button", { class: `sound-pick ${known ? "" : "missing"}`, type: "button", title: "Choose a sound", "aria-label": "Choose sound",
+      onclick: () => openSoundPicker(sel, a.file, (file) => { a.file = file; changed(); }) },
+      h("span", { class: "sb-emoji" }, known ? clipEmoji(a.file) : "⚠"),
+      h("span", { class: "sb-name" }, known ? mediaLabel(current) : `${fileName(a.file)} (missing)`),
+      h("span", { class: "sound-pick-caret" }, "▾"));
     const out = h("output", {}, `${a.volume}%`);
     const vol = h("input", { type: "range", min: 0, max: 100, value: a.volume, "aria-label": "Volume",
       oninput: (e) => { a.volume = +e.target.value; out.value = `${a.volume}%`; markDirty(); } });
