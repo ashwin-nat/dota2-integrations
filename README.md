@@ -45,7 +45,20 @@ The ⏻ button at the top right turns the app off: it stops the server and frees
 
 ### Sharing with friends
 
-The **Friends** tab shares sounds, soundboard clips and rules through a folder you all sync, such as Google Drive. Everyone keeps their own rules. You can copy a friend's rules into yours, or turn on **Play their sounds too** so their rule sounds also play in your games. Lights, webhooks (they can hold API keys), logs and light passwords stay on your computer.
+The **Friends & packs** tab shares sounds, soundboard clips and rules. Everyone keeps their own rules. For each friend or pack you can:
+
+- **Copy** a rule into yours. If you already have a sound for that trigger, you choose **Replace mine** (only the sound changes; your lights stay) or **Add both**.
+- Turn on **Play their sounds too**. Their sounds then fill in triggers you don't have a sound for. Your own sound always wins, so two sounds never play at once.
+
+Lights, webhooks (they can hold API keys), logs and light passwords always stay on your computer. There are two ways to share.
+
+**Sound packs (no install).** **Export my pack** downloads one `.zip` with your rules, soundboard clips and the sounds they use.
+- **Sharing yours:** upload the `.zip` to Google Drive in your browser and set its access to *Anyone with the link*. Then send the link.
+- **Adding a friend's:** paste their link into the Friends tab, or drop their `.zip` on it.
+- **Updates:** packs added from a link are checked for updates every 30 minutes. To publish an update, open the file in Drive and use **Manage versions** to upload the new `.zip`, so the link stays the same. Dropbox links and plain https links work too.
+- **Name clashes:** a pack's sound whose name clashes with a different sound you already have is stored under a new name, such as `wow (2).mp3`.
+
+**Shared folder (automatic, both ways).** For friends who run a sync app:
 
 1. Everyone installs [Google Drive for desktop](https://www.google.com/drive/download/).
 2. One person creates a folder (for example *Dota Sounds*) and shares it with the others as **Editor**.
@@ -53,7 +66,7 @@ The **Friends** tab shares sounds, soundboard clips and rules through a folder y
 4. Make the folder **Available offline** (right-click it) or set Drive to **Mirror files**, so a sound doesn't have to download the first time it plays mid-game.
 5. In the editor, open **Friends**, enter your name and pick the folder. Google Drive, Dropbox, OneDrive and iCloud folders are listed automatically.
 
-When you join, your sounds are copied into `<folder>/media/`, and from then on everyone's sounds play from there. Your rules and clip names are written to `<folder>/people/<your name>.json` every time you save. Nobody else writes that file, so the sync never produces conflicting copies. If you stop sharing, the shared sounds are copied back to your computer, so your rules keep working.
+When you join, your sounds are copied into `<folder>/media/`, and from then on everyone's sounds play from there. If a friend already put a *different* sound there with the same name, yours is copied as `name (2).mp3` and your rules are updated to use it. Your rules and clip names are written to `<folder>/people/<your name>.json` every time you save. Nobody else writes that file, so the sync never produces conflicting copies. If you stop sharing, the shared sounds are copied back to your computer, so your rules keep working.
 
 The **Soundboard** tab works like Discord's soundboard. Add a clip from an audio file, a video file (.mp4, .webm, .mov) or a link (YouTube, Twitch clips, TikTok, X and other sites yt-dlp supports). Trim it to at most 5.2 seconds on the waveform, then give it a name, an emoji and a volume. Clicking a tile plays the clip on this PC's speakers. Each clip is saved as an MP3 named after it (`media/<name>.mp3`), so you can also pick it as the sound for items, abilities and game events. Renaming a clip renames the file and updates the rules that use it. Deleting a clip switches those rule sounds off. Clip details (emoji, volume) are kept in `soundboard.json`.
 

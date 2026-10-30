@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import urllib.request
 import os
 import sys
 import webbrowser
@@ -11,9 +12,9 @@ import aiofiles
 
 RULES_PATH = Path("rules.json")
 
-from src import sharing
+from src import packs, sharing
 from src.config_ui import setup_config_ui
-from src.ingress.http_server import serve
+from src.ingress.http_server import BASE_URL, PORT, PortInUse, serve
 from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
 from src.log_setup import setup_logging
@@ -58,7 +59,7 @@ async def main() -> None:
     executor = ActionExecutor(sound)
     arbiter = LightingArbiter(lighting)
     rule_bus = RuleEventBus(arbiter)
-    compiled = compile_rules(rules_config.rules + sharing.followed_rules(), rule_bus)
+    compiled = compile_rules(rules_config.rules + sharing.followed_rules(rules_config.rules), rule_bus)
     state = GameState(compiled, rule_bus, arbiter)
     n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
     logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
@@ -68,8 +69,8 @@ async def main() -> None:
         """Recompile rules saved from the editor. Returns True if a restart is still needed."""
         rule_bus.reset()
         arbiter.clear_all()
-        # Sounds from friends you follow run alongside your own rules
-        state.set_compiled_rules(compile_rules(config.rules + sharing.followed_rules(), rule_bus))
+        # Sounds from friends you follow fill in triggers your own rules don't cover
+        state.set_compiled_rules(compile_rules(config.rules + sharing.followed_rules(config.rules), rule_bus))
         sound.set_default_volume(config.sound.volume / 100)
         # The lighting driver is built once at startup
         return config.lighting != rules_config.lighting
@@ -89,6 +90,19 @@ async def main() -> None:
                     # Ending this task would shut the app down
                     logger.warning(f"Could not reload rules: {e}")
 
+    async def refresh_packs() -> None:
+        """Pick up new versions of packs imported from a link (watch_friends then reloads)."""
+        while True:
+            for pack in packs.list_packs():
+                if not pack.get("source"):
+                    continue
+                try:
+                    if await packs.refresh(pack):
+                        logger.info(f"Pack {pack['name']!r} updated from its link")
+                except Exception as e:
+                    logger.warning(f"Could not check pack {pack['name']!r} for updates: {e}")
+            await asyncio.sleep(30 * 60)
+
     async def ingest() -> None:
         while True:
             data = await queue.get()
@@ -106,6 +120,7 @@ async def main() -> None:
         asyncio.create_task(ingest(), name="ingest"),
         asyncio.create_task(arbiter.run(), name="lighting"),
         asyncio.create_task(watch_friends(), name="friends"),
+        asyncio.create_task(refresh_packs(), name="packs"),
         *[
             asyncio.create_task(coro, name=name)
             for name, coro in executor.worker_coroutines(rule_bus).items()
@@ -145,6 +160,14 @@ def _open_editor(base_url: str) -> None:
         logger.warning(f"Could not open browser: {e}")
 
 
+def _app_already_running() -> bool:
+    try:
+        with urllib.request.urlopen(f"{BASE_URL}/api/info", timeout=2) as resp:
+            return "data_dir" in json.loads(resp.read())
+    except Exception:
+        return False
+
+
 def _enter_macos_app_dir() -> None:
     """A Finder-launched .app starts in `/`, so keep rules.json, configs and logs in Application Support."""
     if sys.platform == "darwin" and getattr(sys, "frozen", False):
@@ -156,4 +179,16 @@ def _enter_macos_app_dir() -> None:
 if __name__ == "__main__":
     _enter_macos_app_dir()
     setup_logging()
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except PortInUse:
+        # Double-clicking the app again is the usual cause: show the running one instead
+        if _app_already_running():
+            logger.info(f"Rule Forge is already running at {BASE_URL}; opening its editor")
+            _open_editor(BASE_URL)
+            sys.exit(0)
+        logger.error(
+            f"Port {PORT} is used by another program. Close it, or set GSI_PORT to a free port "
+            "(and change the port in Dota's gamestate_integration config to match)."
+        )
+        sys.exit(1)

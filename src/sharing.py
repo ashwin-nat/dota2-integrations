@@ -10,6 +10,7 @@ has two writers for one file. Lighting settings, logs and rules.json stay local.
 """
 from __future__ import annotations
 
+import filecmp
 import getpass
 import json
 import logging
@@ -23,7 +24,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src.media import LOCAL_MEDIA_DIR, set_media_dir
+from src import packs
+from src.media import LOCAL_MEDIA_DIR, media_ref, set_media_dir, unique_path
 from src.rules.config import ActionType, Rule
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,7 @@ SETTINGS_PATH = Path("sharing.json")
 RULES_PATH = Path("rules.json")
 SOUNDBOARD_PATH = Path("soundboard.json")
 PEOPLE_DIR = "people"
+PACK_PREFIX = "pack:"
 
 
 def _default_name() -> str:
@@ -48,7 +51,8 @@ def clean_name(name: str) -> str:
 class SharingSettings(BaseModel):
     folder: str | None = None
     name: str = Field(default_factory=_default_name)
-    # Friends whose rule sounds also play on this PC
+    # Friends (by name) and packs ("pack:<id>") whose rule sounds also play on this PC,
+    # in the order they were followed
     following: list[str] = Field(default_factory=list)
     # Identifies this install so two friends can't publish under the same name
     device: str = Field(default_factory=lambda: uuid.uuid4().hex)
@@ -97,16 +101,48 @@ def _write_atomic(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def _copy_missing(src: Path, dst: Path) -> int:
+def _bring_media(src: Path, dst: Path) -> int:
+    """Copy src's sounds into dst, keeping your rules and clips pointing at your own sounds.
+
+    A file that already exists in dst with the same content is shared as is. One with the
+    same name but different content (two people's "wow.mp3") is copied under a new name,
+    and rules.json / soundboard.json are rewritten to use it. Returns how many were copied.
+    """
     if not src.is_dir():
         return 0
     dst.mkdir(parents=True, exist_ok=True)
-    copied = 0
+    copied, renamed = 0, {}
     for f in src.iterdir():
-        if f.is_file() and not f.name.startswith(".") and not (dst / f.name).exists():
-            shutil.copy2(f, dst / f.name)
-            copied += 1
+        if not f.is_file() or f.name.startswith("."):
+            continue
+        target = dst / f.name
+        if target.exists():
+            if filecmp.cmp(f, target, shallow=False):
+                continue
+            target = unique_path(dst, f.name)
+            renamed[media_ref(f)] = media_ref(target)
+        shutil.copy2(f, target)
+        copied += 1
+    if renamed:
+        _rewrite_refs(renamed)
     return copied
+
+
+def _rewrite_refs(renamed: dict[str, str]) -> None:
+    if RULES_PATH.exists():
+        raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
+        for rule in raw["rules"] if isinstance(raw, dict) else raw:
+            for action in rule.get("actions", []):
+                if action.get("type") == ActionType.PLAY_SOUND and action.get("file") in renamed:
+                    action["file"] = renamed[action["file"]]
+        _write_atomic(RULES_PATH, json.dumps(raw, indent=4))
+    if SOUNDBOARD_PATH.exists():
+        board = json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8"))
+        for clip in board.get("clips", []):
+            if clip.get("file") in renamed:
+                clip["file"] = renamed[clip["file"]]
+        _write_atomic(SOUNDBOARD_PATH, json.dumps(board, indent=4, ensure_ascii=False))
+    logger.info(f"Renamed {len(renamed)} sound(s) that clashed with a different file of the same name: {renamed}")
 
 
 def _person_path(folder: Path, name: str) -> Path:
@@ -136,10 +172,12 @@ def configure(folder: str | None, name: str, create: bool = False) -> dict:
     if folder is None:
         old = shared_folder()
         # Bring the shared sounds home so rules keep working without the folder
-        copied = _copy_missing(old / "media", LOCAL_MEDIA_DIR) if old and old.is_dir() else 0
+        copied = _bring_media(old / "media", LOCAL_MEDIA_DIR) if old and old.is_dir() else 0
         if old and old.is_dir():
             _person_path(old, _settings.name).unlink(missing_ok=True)
-        _settings =_settings.model_copy(update={"folder": None, "name": name, "following": []})
+        # Packs don't need the folder, so keep following those
+        packs_followed = [k for k in _settings.following if k.startswith(PACK_PREFIX)]
+        _settings = _settings.model_copy(update={"folder": None, "name": name, "following": packs_followed})
         _save()
         set_media_dir(LOCAL_MEDIA_DIR)
         logger.info("Sharing turned off")
@@ -159,7 +197,7 @@ def configure(folder: str | None, name: str, create: bool = False) -> dict:
         raise SharingError(f"Someone else in this folder already uses the name {name!r}. Pick another.")
 
     (path / PEOPLE_DIR).mkdir(exist_ok=True)
-    copied = _copy_missing(LOCAL_MEDIA_DIR, path / "media")
+    copied = _bring_media(LOCAL_MEDIA_DIR, path / "media")
     old = shared_folder()
     if old and old != path and _settings.name:
         # Leave the old folder clean if we moved
@@ -231,6 +269,8 @@ def friends() -> list[dict]:
         if data is None or data.get("device") == _settings.device:
             continue
         out.append({
+            "key": path.stem,
+            "kind": "friend",
             "name": path.stem,
             "updated": data.get("updated"),
             "rules": data.get("rules", []),
@@ -240,24 +280,42 @@ def friends() -> list[dict]:
     return out
 
 
-def followed_rules() -> list[Rule]:
+def _trigger(monitor: object) -> str:
+    m = monitor.model_dump(mode="json") if hasattr(monitor, "model_dump") else dict(monitor or {})  # type: ignore[union-attr]
+    # Blink has its own monitor type but is the same trigger as an item rule on item_blink
+    if m.get("type") == "blink":
+        m = {"type": "item", "target": "item_blink", "event": m.get("event")}
+    return f"{m.get('type')}|{m.get('target', '')}|{m.get('event')}"
+
+
+def followed_rules(own_rules: list[Rule]) -> list[Rule]:
     """Sound actions from the rules of friends this person follows, ready to compile.
 
-    Only sounds: a friend's light colours and priorities are for their room.
+    Only sounds: a friend's light colours and priorities are for their room. Sounds never
+    stack: a trigger you already have a sound for keeps yours, and when several followed
+    friends use the same trigger, the friend you followed first wins.
     """
     folder = shared_folder()
-    if not folder:
-        return []
+    taken = {
+        _trigger(r.monitor) for r in own_rules
+        if any(a.type == ActionType.PLAY_SOUND and a.enabled for a in r.actions)
+    }
     out: list[Rule] = []
-    for name in _settings.following:
-        path = _person_path(folder, name)
-        data = _read_person(path) if path.exists() else None
+    for key in _settings.following:
+        if key.startswith(PACK_PREFIX):
+            data = packs.load_pack(key.removeprefix(PACK_PREFIX))
+            name = data["name"] if data else key
+        else:
+            path = _person_path(folder, key) if folder else None
+            data = _read_person(path) if path and path.exists() else None
+            name = key
         if not data:
             continue
         for raw in data.get("rules", []):
             sounds = [a for a in raw.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND and a.get("enabled", True)]
-            if not sounds:
+            if not sounds or _trigger(raw.get("monitor")) in taken:
                 continue
+            taken.add(_trigger(raw.get("monitor")))
             try:
                 out.append(Rule.model_validate({"id": f"{name}/{raw.get('id')}", "monitor": raw.get("monitor"), "actions": sounds}))
             except ValidationError as e:
@@ -268,13 +326,14 @@ def followed_rules() -> list[Rule]:
 def followed_signature() -> tuple:
     """Changes whenever a followed friend's file changes, so the engine knows to recompile."""
     folder = shared_folder()
-    if not folder:
-        return ()
     sig = []
-    for name in sorted(_settings.following):
-        path = _person_path(folder, name)
+    for key in sorted(_settings.following):
+        if key.startswith(PACK_PREFIX):
+            path: Path | None = packs.PACKS_DIR / f"{key.removeprefix(PACK_PREFIX)}.json"
+        else:
+            path = _person_path(folder, key) if folder else None
         try:
-            sig.append((name, path.stat().st_mtime_ns))
+            sig.append((key, path.stat().st_mtime_ns if path else None))
         except OSError:
-            sig.append((name, None))
+            sig.append((key, None))
     return tuple(sig)

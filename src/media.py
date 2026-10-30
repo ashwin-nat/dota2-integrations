@@ -23,6 +23,15 @@ def media_ref(path: Path) -> str:
     return f"media/{path.name}"
 
 
+def unique_path(folder: Path, name: str) -> Path:
+    """folder/name, or "stem (2).ext" etc. if that name is taken."""
+    stem, ext = Path(name).stem, Path(name).suffix
+    path, n = folder / name, 2
+    while path.exists():
+        path, n = folder / f"{stem} ({n}){ext}", n + 1
+    return path
+
+
 def resolve(file: str) -> Path:
     if file.startswith("media/"):
         return _media_dir / file.removeprefix("media/")

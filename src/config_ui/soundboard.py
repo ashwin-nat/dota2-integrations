@@ -263,7 +263,14 @@ def setup_soundboard(
 
     async def play_clip(request: web.Request) -> web.Response:
         clip = find(_load(), request.match_info["id"])
-        await sound.play(str(resolve(clip.file)), volume=clip.volume / 100)
+        path = resolve(clip.file)
+        if not path.is_file():
+            return web.json_response({"ok": False, "error": f"{path.name} is missing (renamed or deleted?)"}, status=400)
+        try:
+            await sound.play(str(path), volume=clip.volume / 100)
+        except Exception as e:
+            logger.warning(f"Could not play {path}: {e}")
+            return web.json_response({"ok": False, "error": f"{path.name} can't be played ({e})"}, status=400)
         return web.json_response({"ok": True})
 
     async def fetch_link(request: web.Request) -> web.StreamResponse:

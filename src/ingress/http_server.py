@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import logging
 import os
 from typing import Callable
@@ -8,6 +9,11 @@ from aiohttp import web
 logger = logging.getLogger(__name__)
 
 PORT = int(os.environ.get("GSI_PORT", "6969"))
+BASE_URL = f"http://127.0.0.1:{PORT}"
+
+
+class PortInUse(Exception):
+    """Something already listens on PORT, often a second launch of this app."""
 
 
 async def handle_gsi(queue: asyncio.Queue, request: web.Request) -> web.Response:
@@ -39,9 +45,16 @@ async def serve(
     await runner.setup()
 
     site = web.TCPSite(runner, "127.0.0.1", PORT)
-    await site.start()
+    try:
+        await site.start()
+    except OSError as e:
+        await runner.cleanup()
+        # 10048 is Windows' WSAEADDRINUSE
+        if e.errno in (errno.EADDRINUSE, 10048):
+            raise PortInUse() from e
+        raise
 
-    base_url = f"http://127.0.0.1:{PORT}"
+    base_url = BASE_URL
     logger.info(f"Listening on {base_url} (rules editor: {base_url}/ui)")
     if on_started is not None:
         on_started(base_url)

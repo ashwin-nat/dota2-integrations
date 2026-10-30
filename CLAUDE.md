@@ -26,7 +26,11 @@ A browser rules editor ("Rule Forge") is served on the same port at `http://127.
 
 The editor's Soundboard tab (`src/config_ui/soundboard.py`) keeps clip details in `soundboard.json` and saves each change immediately instead of through the Save button. The browser decodes the source at 44.1 kHz and trims it to `MAX_CLIP_SECONDS` (5.2 s, as in Discord), then uploads a 16-bit WAV. The server encodes it to MP3 with `lameenc` as `media/<clip name>.mp3`, so clips appear in the rule sound pickers. Renaming a clip renames the file and rewrites matching `play_sound` actions in `rules.json`; deleting it disables them (`retarget_rules`). On startup, clips from the first version (WAVs in `media/soundboard/`) are converted. Links are fetched server-side with yt-dlp (`POST /api/soundboard/fetch`, audio only, no ffmpeg needed), and the raw audio is returned for trimming in the browser.
 
-Sharing with friends (`src/sharing.py`, editor API in `src/config_ui/sharing_routes.py`): settings live in local `sharing.json` (folder, name, followed friends, a device id that stops two people publishing under one name). With a folder set, `media/<file>` references resolve to `<folder>/media/` through `src/media.py` (`resolve`, `media_dir`, `media_ref`); always store `media/<name>` in rules and clips, never a resolved path. `publish()` writes `<folder>/people/<name>.json` (rules without webhooks, plus soundboard clips) on startup, on each rules save and on each soundboard change. Followed friends' sound actions (no lights or webhooks) are compiled alongside your own rules as `<friend>/<rule id>`, and `watch_friends` in `main.py` recompiles when their file's mtime changes. Because a synced folder can lose files, sound files are only checked for existence by the editor's save (`model_validate(..., context={"check_files": True})`); loading never fails on a missing sound, and `ActionExecutor` skips missing files with a warning.
+Sharing with friends (`src/sharing.py`, editor API in `src/config_ui/sharing_routes.py`): settings live in local `sharing.json` (folder, name, followed friends, a device id that stops two people publishing under one name). With a folder set, `media/<file>` references resolve to `<folder>/media/` through `src/media.py` (`resolve`, `media_dir`, `media_ref`); always store `media/<name>` in rules and clips, never a resolved path. `publish()` writes `<folder>/people/<name>.json` (rules without webhooks, plus soundboard clips) on startup, on each rules save and on each soundboard change. Followed friends' sound actions (no lights or webhooks) are compiled alongside your own rules as `<friend>/<rule id>`, but never stack: a trigger you already have a sound for keeps yours, and the first-followed friend wins among friends (`followed_rules(own_rules)`). `watch_friends` in `main.py` recompiles when a followed file's mtime changes. Joining or leaving a folder copies sounds with `_bring_media`, which renames a same-name-different-content file and rewrites rules.json and soundboard.json to match.
+
+Sound packs (`src/packs.py`) are the no-install alternative: `export_pack` zips `pack.json` (rules without webhooks, plus soundboard clips) and the sounds they reference. `import_pack` unpacks into the media folder, renaming clashing sounds and recording `files` (original name to stored name) so a later update overwrites its own files instead of piling up copies. Packs are stored in `packs/<id>.json`, followed as `pack:<id>` in `sharing.json`, and re-downloaded from their `source` link every 30 minutes (`refresh_packs` in `main.py`). `download_url` turns Google Drive and Dropbox share links into direct downloads.
+
+Uploads never overwrite a different file (`unique_path`) and are decoded with pygame first (`SoundManager.check`), so a broken file is rejected at upload rather than failing mid-game. A second launch finds the port taken (`PortInUse`), and if the running process is this app it opens that editor and exits. Because a synced folder can lose files, sound files are only checked for existence by the editor's save (`model_validate(..., context={"check_files": True})`); loading never fails on a missing sound, and `ActionExecutor` skips missing files with a warning.
 
 Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto-created on first run) and an optional `rules.json` in the project root.
 
@@ -37,6 +41,7 @@ src/
 ├── main.py                    # entry point — wires all subsystems, runs asyncio tasks
 ├── media.py                   # resolves "media/<file>" to local media/ or the shared folder
 ├── sharing.py                 # shared-folder settings, publish own rules/clips, read friends, followed rules
+├── packs.py                   # sound pack .zip export/import, import from link, update checks
 ├── ingress/
 │   └── http_server.py         # POST / handler; emits EventCode.INCOMING_DATA on each payload
 ├── state/
@@ -63,7 +68,7 @@ src/
 │   ├── catalog.py             # hero/ability/item names from dotaconstants, cached in .cache/catalog.json
 │   ├── soundboard.py          # soundboard clips API (create/edit/delete/play, link fetch via yt-dlp)
 │   ├── files.py               # allowed audio extensions, safe_filename()
-│   ├── sharing_routes.py      # /api/sharing (on/off, follow, folder browser with cloud-folder suggestions)
+│   ├── sharing_routes.py      # /api/sharing (on/off, follow, folder browser) and /api/pack(s) (export, import, refresh, remove)
 │   └── static/                # index.html, app.js, app.css (vanilla, no build step)
 ├── lighting/
 │   └── controller.py          # LightingController — Philips Hue RGB control

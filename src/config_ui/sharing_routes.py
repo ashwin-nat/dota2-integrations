@@ -9,7 +9,7 @@ from typing import Callable
 
 from aiohttp import web
 
-from src import sharing
+from src import packs, sharing
 from src.media import media_dir
 from src.rules.config import RulesConfig
 
@@ -66,6 +66,15 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             "name": s.name,
             "media_dir": str(media_dir().resolve()),
             "people": sharing.friends(),
+            "packs": [
+                {
+                    "key": f"{sharing.PACK_PREFIX}{p['id']}", "kind": "pack", "id": p["id"], "name": p["name"],
+                    "source": p.get("source"), "updated": p.get("updated"), "imported": p.get("imported"),
+                    "rules": p["rules"], "soundboard": p["soundboard"],
+                    "following": f"{sharing.PACK_PREFIX}{p['id']}" in s.following,
+                }
+                for p in packs.list_packs()
+            ],
         }
 
     def recompile() -> None:
@@ -122,6 +131,61 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             return web.json_response({"ok": False, "error": f"Can't open {path}: {e.strerror or e}"}, status=400)
         return web.json_response(listing)
 
+    async def export_pack(_: web.Request) -> web.Response:
+        name = sharing.settings().name
+        data = await asyncio.to_thread(packs.export_pack, name)
+        return web.Response(body=data, content_type="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="{name} sound pack.zip"',
+        })
+
+    async def import_pack(request: web.Request) -> web.Response:
+        try:
+            if request.content_type == "application/json":
+                url = str((await request.json()).get("url", "")).strip()
+                data = await packs.download(url)
+                record = await asyncio.to_thread(packs.import_pack, data, url)
+            else:
+                reader = await request.multipart()
+                field = await reader.next()
+                if field is None:
+                    return web.json_response({"ok": False, "error": "No file uploaded"}, status=400)
+                data = bytearray()
+                while chunk := await field.read_chunk():  # type: ignore[union-attr]
+                    data += chunk
+                    if len(data) > packs.MAX_PACK_BYTES:
+                        return web.json_response({"ok": False, "error": "Pack is larger than 200 MB"}, status=400)
+                record = await asyncio.to_thread(packs.import_pack, bytes(data), None)
+        except packs.PackError as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=400)
+        except Exception as e:
+            return web.json_response({"ok": False, "error": f"Couldn't import the pack: {e}"}, status=400)
+        recompile()
+        sharing.publish_safely()
+        return web.json_response({"ok": True, "pack": {"id": record["id"], "name": record["name"]}, **await asyncio.to_thread(state)})
+
+    async def refresh_pack(request: web.Request) -> web.Response:
+        pack = packs.load_pack(request.match_info["id"])
+        if not pack:
+            raise web.HTTPNotFound()
+        try:
+            changed = await packs.refresh(pack)
+        except Exception as e:
+            return web.json_response({"ok": False, "error": f"Couldn't update {pack['name']}: {e}"}, status=400)
+        if changed:
+            recompile()
+        return web.json_response({"ok": True, "changed": changed, **await asyncio.to_thread(state)})
+
+    async def remove_pack(request: web.Request) -> web.Response:
+        pack_id = request.match_info["id"]
+        packs.remove_pack(pack_id)
+        sharing.set_following(f"{sharing.PACK_PREFIX}{pack_id}", False)
+        recompile()
+        return web.json_response({"ok": True, **await asyncio.to_thread(state)})
+
+    app.router.add_get("/api/pack/export", export_pack)
+    app.router.add_post("/api/packs", import_pack)
+    app.router.add_post("/api/packs/{id}/refresh", refresh_pack)
+    app.router.add_delete("/api/packs/{id}", remove_pack)
     app.router.add_get("/api/sharing", get_state)
     app.router.add_put("/api/sharing", put_state)
     app.router.add_post("/api/sharing/follow", follow)

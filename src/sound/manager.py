@@ -21,6 +21,10 @@ class SoundManager:
     def stop_all(self) -> None:
         pygame.mixer.stop()
 
+    async def check(self, path: str) -> None:
+        """Raise if pygame can't decode the file, so a bad upload fails now instead of mid-game."""
+        await self._loop.run_in_executor(None, pygame.mixer.Sound, path)
+
     async def play(self, path: str, *, volume: float = 1.0) -> None:
         sound = await self._load(path)
         channel = sound.play()

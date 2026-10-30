@@ -13,7 +13,7 @@ from src import sharing
 from src.config_ui.catalog import load_catalog
 from src.config_ui.sharing_routes import setup_sharing
 from src.config_ui.files import AUDIO_EXTENSIONS, safe_filename
-from src.media import media_dir, media_ref, resolve
+from src.media import media_dir, media_ref, resolve, unique_path
 from src.config_ui.soundboard import setup_soundboard
 from src.rules.config import RulesConfig
 from src.sound import SoundManager
@@ -62,7 +62,7 @@ def setup_config_ui(
     async def list_media(_: web.Request) -> web.Response:
         folder = media_dir()
         files = sorted(
-            (p for p in folder.iterdir() if p.suffix.lower() in AUDIO_EXTENSIONS),
+            (p for p in folder.iterdir() if p.suffix.lower() in AUDIO_EXTENSIONS and not p.name.startswith(".")),
             key=lambda p: p.name.lower(),
         ) if folder.is_dir() else []
         return web.json_response([{"file": media_ref(p), "name": p.name, "size": p.stat().st_size} for p in files])
@@ -73,22 +73,35 @@ def setup_config_ui(
         if field is None or not getattr(field, "filename", None):
             return web.json_response({"ok": False, "error": "No file uploaded"}, status=400)
         # ?name= saves the clip under the file name a rule already expects
-        name = safe_filename(request.query.get("name") or field.filename)  # type: ignore[union-attr]
+        expected = request.query.get("name")
+        name = safe_filename(expected or field.filename)  # type: ignore[union-attr]
         if Path(name).suffix not in AUDIO_EXTENSIONS:
             return web.json_response({"ok": False, "error": "Only .mp3, .wav and .ogg files are supported"}, status=400)
-        media_dir().mkdir(parents=True, exist_ok=True)
-        dest = media_dir() / name
+        folder = media_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        # Never overwrite a different sound (with a shared folder it may be a friend's)
+        dest = folder / name if expected else unique_path(folder, name)
+        tmp = folder / f".upload-{dest.name}"
         size = 0
-        with dest.open("wb") as f:
+        with tmp.open("wb") as f:
             while chunk := await field.read_chunk():  # type: ignore[union-attr]
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
                     f.close()
-                    dest.unlink()
+                    tmp.unlink()
                     return web.json_response({"ok": False, "error": "File is larger than 20 MB"}, status=400)
                 f.write(chunk)
+        try:
+            await sound.check(str(tmp))
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            return web.json_response({"ok": False, "error": (
+                f"{field.filename} can't be played. It may be damaged or not really an "  # type: ignore[union-attr]
+                f"{Path(name).suffix} file. Try re-saving it as MP3, or add it from the Soundboard tab."
+            )}, status=400)
+        tmp.replace(dest)
         logger.info(f"Uploaded sound {dest} ({size} bytes)")
-        return web.json_response({"ok": True, "file": media_ref(dest), "name": name, "size": size})
+        return web.json_response({"ok": True, "file": media_ref(dest), "name": dest.name, "size": size})
 
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
@@ -97,7 +110,11 @@ def setup_config_ui(
         if not file.startswith("media/") or path.parent != media_dir() or not path.is_file():
             return web.json_response({"ok": False, "error": "Unknown sound file"}, status=400)
         volume = max(0, min(100, int(body.get("volume", 100))))
-        await sound.play(str(path), volume=volume / 100)
+        try:
+            await sound.play(str(path), volume=volume / 100)
+        except Exception as e:
+            logger.warning(f"Could not play {path}: {e}")
+            return web.json_response({"ok": False, "error": f"{path.name} can't be played ({e})"}, status=400)
         return web.json_response({"ok": True})
 
     async def catalog(_: web.Request) -> web.Response:
