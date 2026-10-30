@@ -38,7 +38,7 @@ def setup_config_ui(
         return web.FileResponse(STATIC_DIR / "index.html")
 
     async def get_config(_: web.Request) -> web.Response:
-        return web.json_response(json.loads(rules_path.read_text()))
+        return web.json_response(json.loads(rules_path.read_text(encoding="utf-8")))
 
     async def put_config(request: web.Request) -> web.Response:
         try:

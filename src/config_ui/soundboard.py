@@ -48,11 +48,11 @@ class Clip(ClipMeta):
 def _load() -> list[Clip]:
     if not SOUNDBOARD_PATH.exists():
         return []
-    return [Clip.model_validate(c) for c in json.loads(SOUNDBOARD_PATH.read_text()).get("clips", [])]
+    return [Clip.model_validate(c) for c in json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8")).get("clips", [])]
 
 
 def _save(clips: list[Clip]) -> None:
-    SOUNDBOARD_PATH.write_text(json.dumps({"clips": [c.model_dump() for c in clips]}, indent=4, ensure_ascii=False))
+    SOUNDBOARD_PATH.write_text(json.dumps({"clips": [c.model_dump() for c in clips]}, indent=4, ensure_ascii=False), encoding="utf-8")
 
 
 def _errors(e: ValidationError) -> list[dict]:
@@ -130,7 +130,7 @@ def setup_soundboard(
         """Point rules at a renamed clip, or switch their sound off when it's deleted. Returns actions changed."""
         if not rules_path.exists():
             return 0
-        raw = json.loads(rules_path.read_text())
+        raw = json.loads(rules_path.read_text(encoding="utf-8"))
         changed = 0
         for rule in raw["rules"] if isinstance(raw, dict) else raw:
             for action in rule.get("actions", []):

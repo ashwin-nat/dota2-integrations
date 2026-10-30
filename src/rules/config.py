@@ -220,7 +220,7 @@ class RulesConfig(BaseModel):
             config = cls()
             path.write_text(config.model_dump_json(indent=4))
             return config
-        raw = path.read_text()
+        raw = path.read_text(encoding="utf-8")
         data = json.loads(raw)
         config = cls.model_validate(data)
         dumped = config.model_dump()
