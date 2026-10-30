@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Annotated, Literal, Union
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+from src.media import resolve
 
 
 # --- Action types ---
@@ -57,11 +59,15 @@ class PlaySoundAction(BaseAction):
     file: str
     volume: int = Field(ge=0, le=100, default=100)
 
+    # Only checked when validating with context={"check_files": True} (the
+    # editor's save). A synced shared folder can lose a file at any time, so
+    # loading must not fail on it; the executor skips missing files instead.
     # Disabled actions may point at a file that isn't on disk yet, so a rule
     # can be kept as a placeholder until its clip is added.
     @model_validator(mode="after")
-    def file_must_exist(self) -> PlaySoundAction:
-        if self.enabled and not Path(self.file).is_file():
+    def file_must_exist(self, info: ValidationInfo) -> PlaySoundAction:
+        check = bool(info.context and info.context.get("check_files"))
+        if check and self.enabled and not resolve(self.file).is_file():
             raise ValueError(f"sound file not found: {self.file!r}")
         return self
 

@@ -43,6 +43,18 @@ Open `http://127.0.0.1:6969/ui` to edit rules in the browser: pick items from a 
 
 The ⏻ button at the top right turns the app off: it stops the server and frees the port, which is handy for the macOS app because it has no window to quit from.
 
+### Sharing with friends
+
+The **Friends** tab shares sounds, soundboard clips and rules through a folder you all sync, such as Google Drive. Everyone keeps their own rules. You can copy a friend's rules into yours, or turn on **Play their sounds too** so their rule sounds also play in your games. Lights, webhooks (they can hold API keys), logs and light passwords stay on your computer.
+
+1. Everyone installs [Google Drive for desktop](https://www.google.com/drive/download/).
+2. One person creates a folder (for example *Dota Sounds*) and shares it with the others as **Editor**.
+3. Everyone else opens it under *Shared with me*, right-clicks it, and picks **Organize → Add shortcut** to put it in My Drive, so it syncs to their computer.
+4. Make the folder **Available offline** (right-click it) or set Drive to **Mirror files**, so a sound doesn't have to download the first time it plays mid-game.
+5. In the editor, open **Friends**, enter your name and pick the folder. Google Drive, Dropbox, OneDrive and iCloud folders are listed automatically.
+
+When you join, your sounds are copied into `<folder>/media/`, and from then on everyone's sounds play from there. Your rules and clip names are written to `<folder>/people/<your name>.json` every time you save. Nobody else writes that file, so the sync never produces conflicting copies. If you stop sharing, the shared sounds are copied back to your computer, so your rules keep working.
+
 The **Soundboard** tab works like Discord's soundboard. Add a clip from an audio file, a video file (.mp4, .webm, .mov) or a link (YouTube, Twitch clips, TikTok, X and other sites yt-dlp supports). Trim it to at most 5.2 seconds on the waveform, then give it a name, an emoji and a volume. Clicking a tile plays the clip on this PC's speakers. Each clip is saved as an MP3 named after it (`media/<name>.mp3`), so you can also pick it as the sound for items, abilities and game events. Renaming a clip renames the file and updates the rules that use it. Deleting a clip switches those rule sounds off. Clip details (emoji, volume) are kept in `soundboard.json`.
 
 ## Dota 2 Configuration

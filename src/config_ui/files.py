@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-MEDIA_DIR = Path("media")
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg"}
 
 

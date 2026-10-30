@@ -11,6 +11,7 @@ import aiofiles
 
 RULES_PATH = Path("rules.json")
 
+from src import sharing
 from src.config_ui import setup_config_ui
 from src.ingress.http_server import serve
 from src.lighting.arbiter import LightingArbiter
@@ -43,6 +44,7 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
 async def main() -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
+    sharing.load()
     rules_config = RulesConfig.load(RULES_PATH)
     lighting = load_lighting_controller(rules_config.lighting.vendor, enabled=rules_config.lighting.enabled)
     await lighting.setup()
@@ -56,7 +58,7 @@ async def main() -> None:
     executor = ActionExecutor(sound)
     arbiter = LightingArbiter(lighting)
     rule_bus = RuleEventBus(arbiter)
-    compiled = compile_rules(rules_config.rules, rule_bus)
+    compiled = compile_rules(rules_config.rules + sharing.followed_rules(), rule_bus)
     state = GameState(compiled, rule_bus, arbiter)
     n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
     logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
@@ -66,10 +68,26 @@ async def main() -> None:
         """Recompile rules saved from the editor. Returns True if a restart is still needed."""
         rule_bus.reset()
         arbiter.clear_all()
-        state.set_compiled_rules(compile_rules(config.rules, rule_bus))
+        # Sounds from friends you follow run alongside your own rules
+        state.set_compiled_rules(compile_rules(config.rules + sharing.followed_rules(), rule_bus))
         sound.set_default_volume(config.sound.volume / 100)
         # The lighting driver is built once at startup
         return config.lighting != rules_config.lighting
+
+    async def watch_friends() -> None:
+        """Recompile when a followed friend's rules arrive through the sync service."""
+        seen = sharing.followed_signature()
+        while True:
+            await asyncio.sleep(5)
+            current = await asyncio.to_thread(sharing.followed_signature)
+            if current != seen:
+                seen = current
+                logger.info("A followed friend's rules changed; reloading")
+                try:
+                    reload_rules(RulesConfig.load(RULES_PATH))
+                except Exception as e:
+                    # Ending this task would shut the app down
+                    logger.warning(f"Could not reload rules: {e}")
 
     async def ingest() -> None:
         while True:
@@ -87,6 +105,7 @@ async def main() -> None:
     tasks = [
         asyncio.create_task(ingest(), name="ingest"),
         asyncio.create_task(arbiter.run(), name="lighting"),
+        asyncio.create_task(watch_friends(), name="friends"),
         *[
             asyncio.create_task(coro, name=name)
             for name, coro in executor.worker_coroutines(rule_bus).items()
@@ -101,6 +120,7 @@ async def main() -> None:
         ),
     ]
 
+    sharing.publish_safely()
     for task in tasks:
         logger.info(f"Registered task: {task.get_name()}")
     stopper = asyncio.create_task(stop.wait(), name="shutdown")

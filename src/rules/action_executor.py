@@ -15,6 +15,7 @@ from src.rules.config import (
     PlaySoundAction,
     WebhookAction,
 )
+from src.media import resolve
 from src.sound import SoundManager
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,15 @@ class ActionExecutor:
             await self._execute_webhook(action, ctx)  # type: ignore[arg-type]
 
     async def _execute_play_sound(self, action: PlaySoundAction) -> None:
-        await self._sound.play(action.file, volume=action.volume / 100)
+        path = resolve(action.file)
+        if not path.is_file():
+            logger.warning(f"Sound file not found, skipping: {path}")
+            return
+        try:
+            await self._sound.play(str(path), volume=action.volume / 100)
+        except Exception as e:
+            # A bad file must not kill the sound worker
+            logger.warning(f"Could not play {path}: {e}")
 
     async def _execute_webhook(self, action: WebhookAction, ctx: EventContext) -> None:
         key = id(action)

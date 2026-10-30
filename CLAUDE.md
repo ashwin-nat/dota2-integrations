@@ -26,6 +26,8 @@ A browser rules editor ("Rule Forge") is served on the same port at `http://127.
 
 The editor's Soundboard tab (`src/config_ui/soundboard.py`) keeps clip details in `soundboard.json` and saves each change immediately instead of through the Save button. The browser decodes the source at 44.1 kHz and trims it to `MAX_CLIP_SECONDS` (5.2 s, as in Discord), then uploads a 16-bit WAV. The server encodes it to MP3 with `lameenc` as `media/<clip name>.mp3`, so clips appear in the rule sound pickers. Renaming a clip renames the file and rewrites matching `play_sound` actions in `rules.json`; deleting it disables them (`retarget_rules`). On startup, clips from the first version (WAVs in `media/soundboard/`) are converted. Links are fetched server-side with yt-dlp (`POST /api/soundboard/fetch`, audio only, no ffmpeg needed), and the raw audio is returned for trimming in the browser.
 
+Sharing with friends (`src/sharing.py`, editor API in `src/config_ui/sharing_routes.py`): settings live in local `sharing.json` (folder, name, followed friends, a device id that stops two people publishing under one name). With a folder set, `media/<file>` references resolve to `<folder>/media/` through `src/media.py` (`resolve`, `media_dir`, `media_ref`); always store `media/<name>` in rules and clips, never a resolved path. `publish()` writes `<folder>/people/<name>.json` (rules without webhooks, plus soundboard clips) on startup, on each rules save and on each soundboard change. Followed friends' sound actions (no lights or webhooks) are compiled alongside your own rules as `<friend>/<rule id>`, and `watch_friends` in `main.py` recompiles when their file's mtime changes. Because a synced folder can lose files, sound files are only checked for existence by the editor's save (`model_validate(..., context={"check_files": True})`); loading never fails on a missing sound, and `ActionExecutor` skips missing files with a warning.
+
 Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto-created on first run) and an optional `rules.json` in the project root.
 
 ## Project Structure
@@ -33,6 +35,8 @@ Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto
 ```
 src/
 ├── main.py                    # entry point — wires all subsystems, runs asyncio tasks
+├── media.py                   # resolves "media/<file>" to local media/ or the shared folder
+├── sharing.py                 # shared-folder settings, publish own rules/clips, read friends, followed rules
 ├── ingress/
 │   └── http_server.py         # POST / handler; emits EventCode.INCOMING_DATA on each payload
 ├── state/
@@ -58,7 +62,8 @@ src/
 │   ├── routes.py              # /ui editor + /api (config get/put, media list/upload, play, catalog)
 │   ├── catalog.py             # hero/ability/item names from dotaconstants, cached in .cache/catalog.json
 │   ├── soundboard.py          # soundboard clips API (create/edit/delete/play, link fetch via yt-dlp)
-│   ├── files.py               # media/ dir, allowed audio extensions, safe_filename()
+│   ├── files.py               # allowed audio extensions, safe_filename()
+│   ├── sharing_routes.py      # /api/sharing (on/off, follow, folder browser with cloud-folder suggestions)
 │   └── static/                # index.html, app.js, app.css (vanilla, no build step)
 ├── lighting/
 │   └── controller.py          # LightingController — Philips Hue RGB control

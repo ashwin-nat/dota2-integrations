@@ -9,8 +9,11 @@ from typing import Callable
 from aiohttp import web
 from pydantic import ValidationError
 
+from src import sharing
 from src.config_ui.catalog import load_catalog
-from src.config_ui.files import AUDIO_EXTENSIONS, MEDIA_DIR, safe_filename
+from src.config_ui.sharing_routes import setup_sharing
+from src.config_ui.files import AUDIO_EXTENSIONS, safe_filename
+from src.media import media_dir, media_ref, resolve
 from src.config_ui.soundboard import setup_soundboard
 from src.rules.config import RulesConfig
 from src.sound import SoundManager
@@ -46,21 +49,23 @@ def setup_config_ui(
         except Exception:
             return web.json_response({"ok": False, "errors": [{"loc": [], "msg": "Invalid JSON"}]}, status=400)
         try:
-            config = RulesConfig.model_validate(data)
+            config = RulesConfig.model_validate(data, context={"check_files": True})
         except ValidationError as e:
             errors = [{"loc": list(err["loc"]), "msg": err["msg"].removeprefix("Value error, ")} for err in e.errors()]
             return web.json_response({"ok": False, "errors": errors}, status=422)
         rules_path.write_text(json.dumps(config.model_dump(mode="json"), indent=4))
         restart_required = reload(config)
+        sharing.publish_safely()
         logger.info(f"Rules updated from editor: {len(config.rules)} rules")
         return web.json_response({"ok": True, "restart_required": restart_required})
 
     async def list_media(_: web.Request) -> web.Response:
+        folder = media_dir()
         files = sorted(
-            (p for p in MEDIA_DIR.iterdir() if p.suffix.lower() in AUDIO_EXTENSIONS),
+            (p for p in folder.iterdir() if p.suffix.lower() in AUDIO_EXTENSIONS),
             key=lambda p: p.name.lower(),
-        ) if MEDIA_DIR.is_dir() else []
-        return web.json_response([{"file": f"media/{p.name}", "name": p.name, "size": p.stat().st_size} for p in files])
+        ) if folder.is_dir() else []
+        return web.json_response([{"file": media_ref(p), "name": p.name, "size": p.stat().st_size} for p in files])
 
     async def upload_media(request: web.Request) -> web.Response:
         reader = await request.multipart()
@@ -71,8 +76,8 @@ def setup_config_ui(
         name = safe_filename(request.query.get("name") or field.filename)  # type: ignore[union-attr]
         if Path(name).suffix not in AUDIO_EXTENSIONS:
             return web.json_response({"ok": False, "error": "Only .mp3, .wav and .ogg files are supported"}, status=400)
-        MEDIA_DIR.mkdir(exist_ok=True)
-        dest = MEDIA_DIR / name
+        media_dir().mkdir(parents=True, exist_ok=True)
+        dest = media_dir() / name
         size = 0
         with dest.open("wb") as f:
             while chunk := await field.read_chunk():  # type: ignore[union-attr]
@@ -83,12 +88,13 @@ def setup_config_ui(
                     return web.json_response({"ok": False, "error": "File is larger than 20 MB"}, status=400)
                 f.write(chunk)
         logger.info(f"Uploaded sound {dest} ({size} bytes)")
-        return web.json_response({"ok": True, "file": f"media/{name}", "name": name, "size": size})
+        return web.json_response({"ok": True, "file": media_ref(dest), "name": name, "size": size})
 
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
-        path = Path(body.get("file", ""))
-        if path.parent != MEDIA_DIR or not path.is_file():
+        file = str(body.get("file", ""))
+        path = resolve(file)
+        if not file.startswith("media/") or path.parent != media_dir() or not path.is_file():
             return web.json_response({"ok": False, "error": "Unknown sound file"}, status=400)
         volume = max(0, min(100, int(body.get("volume", 100))))
         await sound.play(str(path), volume=volume / 100)
@@ -132,6 +138,12 @@ def setup_config_ui(
     app.router.add_get("/api/info", info)
     app.router.add_post("/api/shutdown", power_off)
     setup_soundboard(app, sound, rules_path, reload)
-    # A fresh install (e.g. the macOS app's Application Support dir) has no media/ yet
-    MEDIA_DIR.mkdir(exist_ok=True)
-    app.router.add_static("/media", MEDIA_DIR)
+    setup_sharing(app, rules_path, reload)
+    async def serve_media(request: web.Request) -> web.StreamResponse:
+        # Looked up per request because the media folder moves when sharing is turned on or off
+        path = media_dir() / request.match_info["name"]
+        if path.parent != media_dir() or not path.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(path)
+
+    app.router.add_get("/media/{name}", serve_media)

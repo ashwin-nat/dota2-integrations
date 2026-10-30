@@ -16,7 +16,9 @@ import lameenc
 from aiohttp import web
 from pydantic import BaseModel, Field, ValidationError
 
-from src.config_ui.files import MEDIA_DIR, safe_filename
+from src import sharing
+from src.config_ui.files import safe_filename
+from src.media import LOCAL_MEDIA_DIR, media_dir, media_ref, resolve
 from src.rules.config import RulesConfig
 from src.sound import SoundManager
 
@@ -48,11 +50,19 @@ class Clip(ClipMeta):
 def _load() -> list[Clip]:
     if not SOUNDBOARD_PATH.exists():
         return []
-    return [Clip.model_validate(c) for c in json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8")).get("clips", [])]
+    text = SOUNDBOARD_PATH.read_text(encoding="utf-8").strip()
+    if not text:
+        return []
+    return [Clip.model_validate(c) for c in json.loads(text).get("clips", [])]
 
 
 def _save(clips: list[Clip]) -> None:
-    SOUNDBOARD_PATH.write_text(json.dumps({"clips": [c.model_dump() for c in clips]}, indent=4, ensure_ascii=False), encoding="utf-8")
+    # Encode before opening so a failure can't truncate the existing file. UTF-8 explicitly:
+    # the Windows default (cp1252) can't hold emoji.
+    data = json.dumps({"clips": [c.model_dump() for c in clips]}, indent=4, ensure_ascii=False)
+    SOUNDBOARD_PATH.write_bytes(data.encode("utf-8"))
+    # Friends see clip names and emoji from the shared folder
+    sharing.publish_safely()
 
 
 def _errors(e: ValidationError) -> list[dict]:
@@ -84,8 +94,8 @@ def _clip_path(name: str, current: str | None = None) -> Path:
     """media/<name>.mp3, numbered if another file already has that name."""
     stem = Path(safe_filename(f"{name}.mp3")).stem
     for n in itertools.count(1):
-        path = MEDIA_DIR / (f"{stem}.mp3" if n == 1 else f"{stem} ({n}).mp3")
-        if not path.exists() or path.as_posix() == current:
+        path = media_dir() / (f"{stem}.mp3" if n == 1 else f"{stem} ({n}).mp3")
+        if not path.exists() or media_ref(path) == current:
             return path
     raise AssertionError("unreachable")
 
@@ -160,7 +170,7 @@ def setup_soundboard(
         changed = False
         for i, clip in enumerate(clips):
             old = Path(clip.file)
-            if old.suffix != ".wav" or old.parent != MEDIA_DIR / "soundboard" or not old.is_file():
+            if old.suffix != ".wav" or old.parent != LOCAL_MEDIA_DIR / "soundboard" or not old.is_file():
                 continue
             try:
                 mp3, _ = _wav_to_mp3(old.read_bytes())
@@ -169,14 +179,14 @@ def setup_soundboard(
                 continue
             dest = _clip_path(clip.name)
             dest.write_bytes(mp3)
-            clips[i] = clip.model_copy(update={"file": dest.as_posix()})
-            retarget_rules(clip.file, dest.as_posix())
+            clips[i] = clip.model_copy(update={"file": media_ref(dest)})
+            retarget_rules(clip.file, media_ref(dest))
             old.unlink()
             changed = True
             logger.info(f"Converted soundboard clip {clip.file} -> {dest}")
         if changed:
             _save(clips)
-            old_dir = MEDIA_DIR / "soundboard"
+            old_dir = LOCAL_MEDIA_DIR / "soundboard"
             if old_dir.is_dir() and not any(old_dir.iterdir()):
                 old_dir.rmdir()
 
@@ -215,10 +225,10 @@ def setup_soundboard(
         except ValueError as e:
             return web.json_response({"ok": False, "error": str(e)}, status=400)
 
-        MEDIA_DIR.mkdir(exist_ok=True)
+        media_dir().mkdir(parents=True, exist_ok=True)
         dest = _clip_path(meta.name)
         dest.write_bytes(mp3)
-        clip = Clip(id=secrets.token_hex(4), file=dest.as_posix(), duration=round(duration, 3), **meta.model_dump())
+        clip = Clip(id=secrets.token_hex(4), file=media_ref(dest), duration=round(duration, 3), **meta.model_dump())
         _save([*_load(), clip])
         logger.info(f"Soundboard clip added: {clip.name} ({clip.duration}s)")
         return web.json_response({"ok": True, "clip": clip.model_dump()})
@@ -233,9 +243,9 @@ def setup_soundboard(
         updated = clip.model_copy(update=meta.model_dump())
         renamed, rules_changed = None, 0
         dest = _clip_path(meta.name, current=clip.file)
-        if dest.as_posix() != clip.file and Path(clip.file).is_file():
-            Path(clip.file).rename(dest)
-            updated.file = dest.as_posix()
+        if media_ref(dest) != clip.file and resolve(clip.file).is_file():
+            resolve(clip.file).rename(dest)
+            updated.file = media_ref(dest)
             renamed = {"from": clip.file, "to": updated.file}
             rules_changed = retarget_rules(clip.file, updated.file)
         _save([updated if c.id == clip.id else c for c in clips])
@@ -246,14 +256,14 @@ def setup_soundboard(
         clip = find(clips, request.match_info["id"])
         # Switch off rule sounds first so rules.json never points an enabled action at a missing file
         rules_changed = retarget_rules(clip.file, None)
-        Path(clip.file).unlink(missing_ok=True)
+        resolve(clip.file).unlink(missing_ok=True)
         _save([c for c in clips if c.id != clip.id])
         logger.info(f"Soundboard clip deleted: {clip.name}")
         return web.json_response({"ok": True, "file": clip.file, "rules_changed": rules_changed})
 
     async def play_clip(request: web.Request) -> web.Response:
         clip = find(_load(), request.match_info["id"])
-        await sound.play(clip.file, volume=clip.volume / 100)
+        await sound.play(str(resolve(clip.file)), volume=clip.volume / 100)
         return web.json_response({"ok": True})
 
     async def fetch_link(request: web.Request) -> web.StreamResponse:

@@ -54,6 +54,8 @@ const S = {
   clips: [],          // soundboard.json clips (saved immediately, not via the Save button)
   maxClip: 5.2,
   clipQuery: "",
+  sharing: null,      // /api/sharing: folder, name, friends' rules and clips
+  shareSetup: null,   // folder picker state while turning sharing on or changing it
 };
 
 const lookup = { items: new Map(), abilities: new Map() };
@@ -96,6 +98,7 @@ async function loadAll() {
   S.saved = JSON.stringify(config);
   renderTopbar();
   render();
+  loadSharing().then(render);
   // The catalog may need a first-time download, so don't block on it.
   api("/api/catalog").then((cat) => {
     S.catalog = cat;
@@ -332,6 +335,8 @@ $("#tabs").addEventListener("click", (e) => {
   if (!btn) return;
   S.tab = btn.dataset.tab;
   render();
+  // Pick up whatever friends synced since last look
+  if (["friends", "soundboard", "rules"].includes(S.tab)) Promise.all([loadSharing(), refreshClips()]).then(render);
 });
 
 // ---- Board ----
@@ -340,9 +345,9 @@ function render() {
   for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("active", b.dataset.tab === S.tab);
   const board = $("#board");
   const scroll = board.scrollTop;
-  // The soundboard edits clips in a dialog, so it gets the inspector's width too
-  $(".layout").classList.toggle("no-inspector", S.tab === "soundboard");
-  board.replaceChildren(...[({ rules: renderRules, items: renderItems, heroes: renderHeroes, events: renderEvents, sounds: renderSounds, soundboard: renderSoundboard }[S.tab])()].flat().filter(Boolean));
+  // The soundboard and Friends tabs don't use the inspector, so they get its width too
+  $(".layout").classList.toggle("no-inspector", S.tab === "soundboard" || S.tab === "friends");
+  board.replaceChildren(...[({ rules: renderRules, items: renderItems, heroes: renderHeroes, events: renderEvents, sounds: renderSounds, soundboard: renderSoundboard, friends: renderFriends }[S.tab])()].flat().filter(Boolean));
   board.scrollTop = scroll;
   renderInspector();
 }
@@ -389,11 +394,20 @@ function renderRules() {
   return [
     h("div", { class: "board-head" }, h("h1", {}, "All rules")),
     h("p", { class: "hint" }, "Every trigger that does something. Click one to edit it, or browse Items, Heroes and Game events to add new ones."),
+    followedNote(),
     h("div", { class: "section-title" }, "Active", h("span", { class: "count" }, live.length)),
     h("div", { class: "rule-list" }, live.map(row)),
     idle.length ? h("div", { class: "section-title" }, "Doing nothing yet", h("span", { class: "count" }, idle.length)) : null,
     idle.length ? h("div", { class: "rule-list" }, idle.map(row)) : null,
   ];
+}
+
+function followedNote() {
+  const followed = (S.sharing?.people || []).filter((f) => f.following);
+  if (!followed.length) return null;
+  return h("p", { class: "insp-warn followed-note" }, "Also playing sounds from ",
+    followed.flatMap((f, i) => [i ? ", " : "", h("strong", {}, f.name), ` (${plural(f.rules.filter((r) => r.actions.some((a) => a.type === "play_sound" && a.enabled !== false)).length, "rule")})`]),
+    ". ", h("button", { class: "linkish", onclick: () => { S.tab = "friends"; render(); } }, "Manage in Friends"));
 }
 
 function jumpTo(monitor) {
@@ -641,6 +655,7 @@ function renderSoundboard() {
     h("p", { class: "hint" }, `Click a sound to play it on this PC's speakers. ▶ previews it in the browser only. Clips can be up to ${S.maxClip} seconds, cut from an audio file, a video, or a YouTube link. Each clip is saved as an MP3 named after it, so you can also pick it as the sound for items, abilities and game events.`),
     grid,
     !S.clips.length ? h("p", { class: "hint sb-empty" }, "No sounds yet. Drop an audio or video file on the board, or click Add sound.") : null,
+    ...(q ? [] : renderFriendClips()),
     q && !clips.length ? h("p", { class: "hint" }, `No sounds match “${S.clipQuery}”.`) : null,
   ];
 }
@@ -1014,6 +1029,232 @@ function openClipEditor({ clip, file } = {}) {
   }
 }
 
+// ---- Friends (shared folder) ----
+
+async function loadSharing() {
+  try {
+    S.sharing = await api("/api/sharing");
+  } catch (e) {
+    S.sharing = { enabled: false, people: [], error: e.message };
+  }
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+function ago(iso) {
+  if (!iso) return "never";
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 90) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} days ago`;
+}
+
+const soundFiles = (r) => r.actions.filter((a) => a.type === "play_sound").map((a) => a.file).sort().join("|");
+const haveRule = (rule) => S.config.rules.some((r) => sameMonitor(r.monitor, rule.monitor) && soundFiles(r) === soundFiles(rule));
+
+function copyFriendRules(friend, rules) {
+  for (const rule of rules) {
+    const copy = structuredClone(rule);
+    let id = rule.id;
+    for (let n = 2; S.config.rules.some((r) => r.id === id); n++) id = `${rule.id}_${n}`;
+    copy.id = id;
+    // Light priorities must stay unique across your own rules
+    let prio = nextPriority();
+    for (const a of copy.actions) if (a.type === "light" && a.priority != null) a.priority = prio++;
+    S.config.rules.push(copy);
+  }
+  markDirty();
+  render();
+  const what = rules.length === 1 ? describeTrigger(rules[0].monitor).title : `${rules.length} rules`;
+  toast(`Copied ${what} from ${friend.name}. Press Save to keep ${rules.length === 1 ? "it" : "them"}.`, "ok");
+}
+
+async function setFollow(friend, follow) {
+  try {
+    S.sharing = await api("/api/sharing/follow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: friend.name, follow }) });
+    toast(follow ? `${friend.name}'s sounds now play on this PC too.` : `Stopped playing ${friend.name}'s sounds.`, "ok");
+  } catch (e) {
+    toast(`Couldn't update: ${e.message}`, "err");
+  }
+  render();
+}
+
+function renderFriends() {
+  const head = h("div", { class: "board-head" }, h("h1", {}, "Friends"),
+    S.sharing?.enabled ? h("button", { class: "btn btn-sm", title: "Check the shared folder for changes", onclick: async () => { await Promise.all([loadSharing(), refreshClips()]); render(); } }, "↻ Refresh") : null);
+  if (!S.sharing) return [head, h("p", { class: "hint" }, "Loading…")];
+  if (!S.sharing.enabled || S.shareSetup) return [head, renderShareSetup()];
+
+  const sh = S.sharing;
+  const status = h("div", { class: "share-card" },
+    h("div", { class: "share-who" },
+      h("div", {}, "Sharing as ", h("strong", {}, sh.name)),
+      h("div", { class: "hint", title: sh.folder }, "Folder: ", h("code", {}, sh.folder))),
+    h("button", { class: "btn btn-sm", onclick: () => { S.shareSetup = { name: sh.name, browse: null }; render(); } }, "Change"),
+    h("button", { class: "btn btn-sm btn-ghost btn-danger", onclick: turnOffSharing }, "Stop sharing"));
+  const out = [head, status];
+  if (!sh.available) {
+    out.push(h("p", { class: "insp-warn" }, "The shared folder isn't reachable right now (is Google Drive running?). Sounds play from this PC's own copies until it's back."));
+  }
+  if (!sh.people.length) {
+    out.push(h("p", { class: "hint share-empty" }, "No friends here yet. Share this folder with them. Once they turn on sharing and pick the same folder, their rules and clips show up here."));
+    return out;
+  }
+  for (const f of sh.people) out.push(renderFriend(f));
+  return out;
+}
+
+function renderFriend(f) {
+  const missing = f.rules.filter((r) => !haveRule(r));
+  const row = (r) => {
+    const d = describeTrigger(r.monitor);
+    const have = haveRule(r);
+    return h("div", { class: "rule-row friend-rule" },
+      h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
+      h("span", { class: "trig" }, h("div", { class: "t" }, d.title), h("div", { class: "s" }, d.sub)),
+      h("span", { class: "acts" }, r.actions.map((a) => {
+        const off = a.enabled === false ? "off" : "";
+        if (a.type === "play_sound") {
+          return h("span", { class: `chip ${off} ${hasMedia(a.file) ? "" : "missing"}`, title: a.file },
+            hasMedia(a.file) ? playButton(a.file, () => a.volume) : null, fileName(a.file), ` · ${a.volume}%`);
+        }
+        return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), "light");
+      })),
+      have ? h("span", { class: "have" }, "✓ In yours")
+        : h("button", { class: "btn btn-sm", onclick: () => copyFriendRules(f, [r]) }, "Copy"));
+  };
+  const follow = h("label", { class: "toggle", title: "Their rule sounds also play on this PC during your games (lights stay yours)" },
+    h("input", { type: "checkbox", checked: f.following, onchange: (e) => setFollow(f, e.target.checked) }),
+    h("span", { class: "toggle-track" }), h("span", {}, "Play their sounds too"));
+  return h("section", { class: "friend" },
+    h("div", { class: "friend-head" },
+      h("div", { class: "friend-avatar" }, f.name.slice(0, 1).toUpperCase()),
+      h("div", { class: "friend-name" }, h("strong", {}, f.name),
+        h("div", { class: "hint" }, `${plural(f.rules.length, "rule")} · ${plural(f.soundboard.length, "soundboard clip")} · updated ${ago(f.updated)}`)),
+      follow,
+      missing.length ? h("button", { class: "btn btn-sm btn-gold", onclick: () => copyFriendRules(f, missing) }, `Copy all (${missing.length})`) : null),
+    f.rules.length
+      ? h("details", { class: "friend-rules", open: f.rules.length <= 6 },
+        h("summary", {}, "Their rules"),
+        h("div", { class: "rule-list" }, f.rules.map(row)))
+      : h("p", { class: "hint" }, "No rules yet."));
+}
+
+async function turnOffSharing() {
+  if (!confirm("Stop sharing?\n\nShared sounds are copied back to this PC so your rules keep working. Your friends will no longer see your rules.")) return;
+  try {
+    const res = await api("/api/sharing", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folder: null, name: S.sharing.name }) });
+    S.sharing = res;
+    await refreshClips();
+    toast(`Sharing is off.${res.copied ? ` Copied ${res.copied} sounds back to this PC.` : ""}`, "ok");
+  } catch (e) {
+    toast(`Couldn't turn off sharing: ${e.message}`, "err");
+  }
+  render();
+}
+
+async function browseTo(path) {
+  try {
+    S.shareSetup.browse = await api(`/api/sharing/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`);
+  } catch (e) {
+    toast(e.message, "err");
+  }
+  render();
+}
+
+function renderShareSetup() {
+  const sh = S.sharing;
+  S.shareSetup ??= { name: sh.name, browse: null };
+  const st = S.shareSetup;
+  if (!st.browse) {
+    if (!st.loading) { st.loading = true; browseTo(null); }
+    return h("p", { class: "hint" }, "Looking for Google Drive…");
+  }
+  const b = st.browse;
+
+  const nameInput = h("input", { type: "text", maxlength: 24, value: st.name, "aria-label": "Your name", oninput: (e) => { st.name = e.target.value; } });
+  const newFolder = h("input", { type: "text", value: st.newFolder ?? "Dota Sounds", "aria-label": "New folder name", oninput: (e) => { st.newFolder = e.target.value; } });
+
+  const choose = async (folder, create = false) => {
+    try {
+      const res = await api("/api/sharing", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folder, name: st.name, create }) });
+      S.sharing = res;
+      S.shareSetup = null;
+      await refreshClips();
+      toast(`Sharing is on.${res.copied ? ` Copied ${res.copied} of your sounds into the shared folder.` : ""}`, "ok", 6000);
+    } catch (e) {
+      toast(e.message, "err", 7000);
+    }
+    render();
+  };
+
+  const picker = b.path == null
+    ? h("div", { class: "folder-list" }, b.suggestions.map((s) =>
+      h("button", { class: "folder", onclick: () => browseTo(s.path) }, h("span", { class: "folder-ico" }, "☁"), h("span", {}, s.label), h("code", {}, s.path))))
+    : h("div", {},
+      h("div", { class: "folder-path" },
+        h("button", { class: "btn btn-sm btn-ghost", onclick: () => browseTo(null) }, "☁ Places"),
+        b.parent ? h("button", { class: "btn btn-sm btn-ghost", onclick: () => browseTo(b.parent) }, "↑ Up") : null,
+        h("code", {}, b.path)),
+      h("div", { class: "folder-list" },
+        b.dirs.length ? b.dirs.map((d) => h("button", { class: `folder ${d.shared ? "shared" : ""}`, onclick: () => browseTo(d.path) },
+          h("span", { class: "folder-ico" }, "▸"), h("span", {}, d.name), d.shared ? h("span", { class: "chip" }, "has friends' files") : null))
+          : h("p", { class: "hint" }, "No folders inside.")),
+      h("div", { class: "folder-actions" },
+        h("button", { class: `btn ${b.shared ? "btn-gold" : ""}`, onclick: () => choose(b.path) }, b.shared ? "Join this shared folder" : "Use this folder"),
+        h("span", { class: "hint" }, "or make a new one here:"), newFolder,
+        h("button", { class: "btn", onclick: () => choose(`${b.path.replace(/[\\/]+$/, "")}${b.path.includes("\\") ? "\\" : "/"}${(st.newFolder ?? "Dota Sounds").trim()}`, true) }, "Create & use")));
+
+  return h("div", { class: "share-setup" },
+    h("p", {}, "Share sounds, soundboard clips and rules with friends through a folder you all sync, like Google Drive. Everyone keeps their own rules; you can copy theirs, or have their sounds play in your games too. Lights and webhooks stay private."),
+    h("ol", { class: "share-steps" },
+      h("li", {}, "Everyone installs ", h("strong", {}, "Google Drive for desktop"), "."),
+      h("li", {}, "One person makes a folder (e.g. ", h("em", {}, "Dota Sounds"), ") and shares it with the others as ", h("strong", {}, "Editor"), "."),
+      h("li", {}, "Friends open it under ", h("em", {}, "Shared with me"), " → right-click → ", h("strong", {}, "Organize → Add shortcut"), " → My Drive, so it syncs to their computer."),
+      h("li", {}, "In Drive for desktop settings, choose ", h("strong", {}, "Mirror files"), ", or right-click the folder → ", h("strong", {}, "Available offline"), ", so sounds play instantly in-game."),
+      h("li", {}, "Then everyone picks that folder below.")),
+    h("label", { class: "field" }, h("span", { class: "lbl" }, "Your name"), nameInput),
+    h("div", { class: "section-title" }, "Shared folder"),
+    picker,
+    sh.enabled ? h("button", { class: "btn btn-ghost", onclick: () => { S.shareSetup = null; render(); } }, "Cancel") : null);
+}
+
+function renderFriendClips() {
+  const people = (S.sharing?.people || []).filter((f) => f.soundboard.length);
+  return people.flatMap((f) => [
+    h("div", { class: "section-title" }, `${f.name}'s sounds`, h("span", { class: "count" }, f.soundboard.length)),
+    h("div", { class: "sb-grid friend-clips" }, f.soundboard.map((c) => {
+      const el = h("div", {
+        class: `sb-tile ${hasMedia(c.file) ? "" : "unsynced"}`, role: "button", tabindex: "0",
+        title: hasMedia(c.file) ? `Play ${c.name} on this PC` : `${fileName(c.file)} hasn't synced to this PC yet`,
+        onclick: () => playFriendClip(c, el),
+        onkeydown: (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); playFriendClip(c, el); } },
+      },
+      h("span", { class: "sb-emoji" }, c.emoji || "🔊"),
+      h("span", { class: "sb-name" }, c.name),
+      hasMedia(c.file) ? h("span", { class: "sb-tools" }, playButton(c.file, () => c.volume)) : null);
+      return el;
+    })),
+  ]);
+}
+
+async function playFriendClip(c, tile) {
+  if (!hasMedia(c.file)) return;
+  try {
+    await api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: c.file, volume: c.volume }) });
+  } catch (e) {
+    toast(`Couldn't play ${c.name}: ${e.message}`, "err");
+    return;
+  }
+  tile.classList.remove("playing");
+  void tile.offsetWidth;
+  tile.style.setProperty("--dur", `${c.duration}s`);
+  tile.classList.add("playing");
+  clearTimeout(tile._done);
+  tile._done = setTimeout(() => tile.classList.remove("playing"), c.duration * 1000);
+}
+
 // ---- Inspector ----
 
 function renderInspector() {
@@ -1084,7 +1325,7 @@ function renderEventBody(ev) {
   );
 }
 
-const clipEmoji = (file) => S.clips.find((c) => c.file === file)?.emoji || "🔊";
+const clipEmoji = (file) => [...S.clips, ...(S.sharing?.people || []).flatMap((f) => f.soundboard)].find((c) => c.file === file)?.emoji || "🔊";
 
 // Discord-style soundboard grid for choosing a rule's sound
 function openSoundPicker(anchor, selected, onPick) {

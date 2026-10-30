@@ -46,6 +46,7 @@ class SoundManager:
             return sound
         except Exception as exc:
             future.set_exception(exc)
+            future.exception()  # mark retrieved so a failure with no concurrent waiter isn't logged twice
             raise
         finally:
             self._loading.pop(path, None)
