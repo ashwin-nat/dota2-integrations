@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Generator, Literal
 
 
@@ -62,7 +63,7 @@ class MultiChargeItem(BaseItem):
     charges: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class Items:
     _slot0: BaseItem
     _slot1: BaseItem
@@ -79,6 +80,23 @@ class Items:
     _stash3: BaseItem
     _stash4: BaseItem
     _stash5: BaseItem
+
+    @cached_property
+    def _by_name(self) -> dict[str, BaseItem]:
+        index: dict[str, BaseItem] = {}
+        # Since on every GSI tick, a new Items object is created, we can cache the name index for the lifetime of that object. This avoids repeated iteration over the slots for every monitor.
+        for item in self:
+            if not isinstance(item, EmptyItem):
+                index.setdefault(item.name, item)
+        return index
+
+    def find(self, name: str) -> BaseItem | None:
+        """Return the first non-empty slot holding the named item, or None.
+
+        The name index is built on first use, so every monitor evaluating the
+        same snapshot shares one pass over the slots.
+        """
+        return self._by_name.get(name)
 
     def __iter__(self) -> Generator[BaseItem, None, None]:
         yield self._slot0

@@ -24,13 +24,6 @@ class AbilityMonitor(StatefulMonitor):
         raise NotImplementedError
 
 
-def _find_ability(abilities: Abilities, name: str) -> Ability | None:
-    for ability in abilities:
-        if ability.name == name:
-            return ability
-    return None
-
-
 class AbilityCooldownStartedMonitor(AbilityMonitor):
     """Active while the target ability is on cooldown, from the 0 to > 0 transition.
 
@@ -44,7 +37,7 @@ class AbilityCooldownStartedMonitor(AbilityMonitor):
         self._prev_cooldown: int | None = None
 
     def evaluate(self, abilities: Abilities) -> None:
-        ability = _find_ability(abilities, self._target)
+        ability = abilities.find(self._target)
         if ability is None or ability.level == 0:
             self._prev_cooldown = None
             self._end()
