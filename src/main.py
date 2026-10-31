@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -14,6 +15,7 @@ from src.ingress.http_server import serve
 from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
 from src.log_setup import setup_logging
+from src.recorder import Recorder
 from src.rules import compile_rules, RulesConfig
 from src.rules.action_executor import ActionExecutor
 from src.rules.bus import RuleEventBus
@@ -38,7 +40,7 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     loop.default_exception_handler(context)
 
 
-async def main() -> None:
+async def main(record: bool = False) -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
     rules_config = RulesConfig.load(RULES_PATH)
@@ -70,6 +72,11 @@ async def main() -> None:
                     await f.write(json.dumps(data, indent=2))
                 logger.exception(f"Error processing update: {e} \n Dumped data to {file_name}")
 
+    if record:
+        recorder = Recorder()
+    else:
+        recorder = None
+        logger.info("Record mode on: POST/GET http://127.0.0.1:6969/record/save writes the history to recordings/")
 
     tasks = [
         asyncio.create_task(ingest(), name="ingest"),
@@ -78,7 +85,7 @@ async def main() -> None:
             asyncio.create_task(coro, name=name)
             for name, coro in executor.worker_coroutines(rule_bus).items()
         ],
-        asyncio.create_task(serve(queue), name="http_server"),
+        asyncio.create_task(serve(queue, recorder), name="http_server"),
     ]
 
     for task in tasks:
@@ -96,5 +103,8 @@ def _enter_macos_app_dir() -> None:
 
 if __name__ == "__main__":
     _enter_macos_app_dir()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--record", action="store_true", help="keep incoming payloads in memory; /record/save writes them to recordings/*.jsonl")
+    args = parser.parse_args()
     setup_logging()
-    asyncio.run(main())
+    asyncio.run(main(record=args.record))

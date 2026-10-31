@@ -21,6 +21,24 @@ uv run python -m src.main
 
 Listens on `http://127.0.0.1:6969`. Configure Dota 2 to POST to this address (see below).
 
+## Record and replay
+
+Capture real game data once, then replay it as often as you like without launching Dota.
+
+```bash
+uv run python -m src.main --record      # or the "App (record)" debug target
+```
+
+While recording, every incoming payload is kept in memory. Open (or POST to) `http://127.0.0.1:6969/record/save` to write them to `recordings/gsi_<timestamp>.jsonl`, one `{"ts": ..., "data": <payload>}` per line. The endpoint only exists in record mode, and each save contains everything since startup.
+
+Replay is a separate tool, not part of the app. Start the app normally, then:
+
+```bash
+uv run python tools/replay.py recordings/<file>.jsonl [--speed 2] [--instant] [--url http://127.0.0.1:6969/]
+```
+
+It POSTs the payloads to the running app using the recorded timing (`--speed` scales it, `--instant` removes the delays).
+
 ## Dota 2 Configuration
 
 Create a config file at:

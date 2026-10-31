@@ -19,3 +19,4 @@ build/
 dist/
 *.spec
 !rules.example.json
+recordings/
