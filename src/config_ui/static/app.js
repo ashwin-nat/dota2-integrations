@@ -373,13 +373,20 @@ function renderRules() {
     const d = describeTrigger(r.monitor);
     const acts = r.actions.map((a) => {
       const off = a.enabled === false ? "off" : "";
-      if (a.type === "play_sound") return h("span", { class: `chip ${off} ${hasMedia(a.file) ? "" : "missing"}`, title: a.file }, "♪ ", fileName(a.file), ` · ${a.volume}%`);
+      if (a.type === "play_sound") {
+        const ok = hasMedia(a.file);
+        return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: a.file },
+          ok ? playButton(a.file, () => a.volume) : "♪ ", fileName(a.file), ` · ${a.volume}%`);
+      }
       if (a.type === "light") return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline");
       return h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook");
     });
-    return h("button", {
+    // A div, not a button: the sound chips hold their own preview buttons
+    return h("div", {
       class: `rule-row ${activeActions(r).length ? "" : "inactive"}`,
+      role: "button", tabindex: "0",
       onclick: () => jumpTo(r.monitor),
+      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); jumpTo(r.monitor); } },
     },
     h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
     h("span", { class: "trig" }, h("div", { class: "t" }, d.title), h("div", { class: "s" }, d.sub)),
