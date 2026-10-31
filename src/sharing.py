@@ -24,7 +24,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src import packs
+from src import packs, shortcuts
 from src.media import LOCAL_MEDIA_DIR, media_ref, set_media_dir, unique_path
 from src.rules.config import ActionType, Rule
 
@@ -80,6 +80,11 @@ def load() -> SharingSettings:
     else:
         _save()
     folder = shared_folder()
+    if folder and (target := shortcuts.follow(folder)) != folder:
+        # Saved before shortcuts were followed
+        _settings = _settings.model_copy(update={"folder": str(target)})
+        _save()
+        folder = target
     if folder and not folder.is_dir():
         # Drive not mounted yet, or the folder was removed: keep working from local files
         logger.warning(f"Shared folder {folder} is not available; using local media/ for now")
@@ -87,7 +92,49 @@ def load() -> SharingSettings:
     else:
         set_media_dir(folder / "media" if folder else LOCAL_MEDIA_DIR)
     LOCAL_MEDIA_DIR.mkdir(exist_ok=True)
+    _restore_missing_media()
     return _settings
+
+
+def _referenced_media() -> set[str]:
+    """Sound files (as "media/<name>") that rules.json and soundboard.json point at."""
+    refs: set[str] = set()
+    try:
+        if RULES_PATH.exists():
+            raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
+            for rule in raw["rules"] if isinstance(raw, dict) else raw:
+                refs.update(a["file"] for a in rule.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND and a.get("file"))
+        if SOUNDBOARD_PATH.exists():
+            refs.update(c["file"] for c in json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8")).get("clips", []) if c.get("file"))
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        logger.warning(f"Could not read sound references: {e}")
+    return {r for r in refs if r.startswith("media/")}
+
+
+def _restore_missing_media() -> None:
+    """Copy local sounds your rules use into the shared media folder when it lacks them.
+
+    Covers sounds that were in the local media/ folder before sharing was turned on, so
+    rules never end up pointing at files only this PC has. Never overwrites or renames, and
+    only touches sounds that are actually referenced, so deleted ones aren't resurrected.
+    """
+    folder = shared_folder()
+    if not folder or not folder.is_dir():
+        return
+    dst = folder / "media"
+    copied = 0
+    for ref in _referenced_media():
+        name = ref.removeprefix("media/")
+        src = LOCAL_MEDIA_DIR / name
+        if src.is_file() and not (dst / name).exists():
+            try:
+                dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst / name)
+                copied += 1
+            except OSError as e:
+                logger.warning(f"Could not copy {name} to the shared folder: {e}")
+    if copied:
+        logger.info(f"Copied {copied} of your sound(s) into the shared folder so your rules can find them")
 
 
 def _save() -> None:
@@ -186,6 +233,7 @@ def configure(folder: str | None, name: str, create: bool = False) -> dict:
     path = Path(folder).expanduser()
     if not path.is_absolute():
         raise SharingError("Pick a folder from the list, or paste its full path")
+    path = shortcuts.follow(path)
     if create:
         if not path.parent.is_dir():
             raise SharingError(f"{path.parent} doesn't exist")

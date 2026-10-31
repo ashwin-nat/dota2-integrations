@@ -1187,6 +1187,9 @@ async function packAction(p, action) {
   render();
 }
 
+// Whether each friend's rule list is expanded, so copying a rule (which re-renders) doesn't collapse it
+const rulesOpen = new Map();
+
 function renderFriend(f) {
   const isPack = f.kind === "pack";
   const fresh = f.rules.filter((r) => !haveRule(r) && !clashingRules(r).length);
@@ -1233,7 +1236,7 @@ function renderFriend(f) {
         : "You already have your own sound for every trigger they use, so yours play.")
       : null,
     f.rules.length
-      ? h("details", { class: "friend-rules", open: f.rules.length <= 6 },
+      ? h("details", { class: "friend-rules", open: rulesOpen.get(f.key) ?? f.rules.length <= 6, ontoggle: (e) => rulesOpen.set(f.key, e.target.open) },
         h("summary", {}, isPack ? "Rules in this pack" : "Their rules"),
         h("div", { class: "rule-list" }, f.rules.map(row)))
       : h("p", { class: "hint" }, "No rules yet."));

@@ -9,7 +9,7 @@ from typing import Callable
 
 from aiohttp import web
 
-from src import packs, sharing
+from src import packs, sharing, shortcuts
 from src.media import media_dir
 from src.rules.config import RulesConfig
 
@@ -108,11 +108,17 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             (d for d in path.iterdir() if d.is_dir() and not d.name.startswith((".", "$"))),
             key=lambda d: d.name.lower(),
         )
+        entries = [(d.name, d) for d in dirs]
+        # Drive shows a shared folder added to My Drive as a .lnk; list it as the folder it points to
+        for lnk in path.glob("*.lnk"):
+            if (target := shortcuts.read_lnk(lnk)) and target.is_dir():
+                entries.append((lnk.stem, target))
+        entries.sort(key=lambda e: e[0].lower())
         return {
             "path": str(path),
             "parent": str(path.parent) if path.parent != path else None,
             "shared": _looks_shared(path),
-            "dirs": [{"name": d.name, "path": str(d), "shared": _looks_shared(d)} for d in dirs[:500]],
+            "dirs": [{"name": n, "path": str(d), "shared": _looks_shared(d)} for n, d in entries[:500]],
         }
 
     async def browse(request: web.Request) -> web.Response:
