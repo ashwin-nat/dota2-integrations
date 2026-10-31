@@ -151,7 +151,12 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
   font-family: "Barlow Condensed", sans-serif;
   text-transform: uppercase; letter-spacing: .08em; font-size: 12px; color: var(--muted);
 }
-.status.dirty { color: var(--gold-hi); }
+.status.dirty { color: var(--gold-hi); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.changes { list-style: none; margin: 0; padding: 14px 18px; display: grid; gap: 10px; max-height: 60vh; overflow-y: auto; }
+.changes li { display: flex; gap: 12px; align-items: center; }
+.changes .thumb { flex: none; width: 52px; height: 38px; border-radius: 2px; background: #0b0e12 center/cover; display: grid; place-items: center; font-size: 20px; box-shadow: 0 0 0 1px #000; }
+.changes .thumb.square { width: 38px; margin-inline: 7px; }
+.changes .hint { margin: 2px 0 0; overflow-wrap: anywhere; }
 .status.ok { color: var(--green); }
 .status.err { color: var(--red-hi); }
 
