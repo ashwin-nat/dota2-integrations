@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from src.rules.monitor_base import StatefulMonitor
-from src.state.items import BaseItem, EmptyItem, NoChargeItem, SingleChargeItem, MultiChargeItem, Items
+from src.state.items import BaseItem, NoChargeItem, SingleChargeItem, MultiChargeItem, Items
 
 if TYPE_CHECKING:
     from src.rules.bus import RuleEventBus
@@ -27,14 +27,6 @@ class ItemMonitor(StatefulMonitor):
         raise NotImplementedError
 
 
-def _find_item(items: Items, name: str) -> BaseItem | None:
-    """Return the first non-empty slot holding the named item, or None."""
-    for item in items:
-        if not isinstance(item, EmptyItem) and item.name == name:
-            return item
-    return None
-
-
 class CooldownReadyMonitor(ItemMonitor):
     """Active while the target item is off cooldown, from the > 0 to 0 transition."""
 
@@ -43,7 +35,7 @@ class CooldownReadyMonitor(ItemMonitor):
         self._prev_cooldown: int | None = None
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        curr = _find_item(items, self._target)
+        curr = items.find(self._target)
         cooldown = _get_cooldown(curr)
         if cooldown is None:
             self._prev_cooldown = None
@@ -68,7 +60,7 @@ class CooldownStartedMonitor(ItemMonitor):
         self._prev_cooldown: int | None = None
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        curr = _find_item(items, self._target)
+        curr = items.find(self._target)
         cooldown = _get_cooldown(curr)
         if cooldown is None:
             self._prev_cooldown = None
@@ -100,7 +92,7 @@ class ItemAcquiredMonitor(ItemMonitor):
         self._seen: bool = False
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        found = _find_item(items, self._target) is not None
+        found = items.find(self._target) is not None
         if not found:
             self._seen = False
             self._end()
@@ -121,7 +113,7 @@ class ItemLostMonitor(ItemMonitor):
         self._had_item: bool = False
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        has_item = _find_item(items, self._target) is not None
+        has_item = items.find(self._target) is not None
         if self._had_item and not has_item:
             self._fire()
         elif has_item:
@@ -140,7 +132,7 @@ class MidasChargedMonitor(ItemMonitor):
     """
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        curr = _find_item(items, self._target)
+        curr = items.find(self._target)
         if isinstance(curr, MultiChargeItem) and curr.charges == 1:
             if not self._active:
                 self._fire()
@@ -152,7 +144,7 @@ class MidasOverchargedMonitor(ItemMonitor):
     """Active while Midas has 2 charges."""
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        curr = _find_item(items, self._target)
+        curr = items.find(self._target)
         if isinstance(curr, MultiChargeItem) and curr.charges == 2:
             if not self._active:
                 self._fire()
@@ -214,7 +206,7 @@ class BkbCooldownStartedMonitor(CooldownStartedMonitor):
         return self._prev_cooldown is not None and cooldown > self._prev_cooldown and cooldown == max_cd
 
     def evaluate(self, items: Items, prev_items: Items | None) -> None:
-        curr = _find_item(items, self._target)
+        curr = items.find(self._target)
         cooldown = _get_cooldown(curr)
         if cooldown is None:
             self._prev_cooldown = None

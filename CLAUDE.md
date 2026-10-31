@@ -43,7 +43,7 @@ src/
 ├── sharing.py                 # shared-folder settings, publish own rules/clips, read friends, followed rules
 ├── packs.py                   # sound pack .zip export/import, import from link, update checks
 ├── ingress/
-│   └── http_server.py         # POST / handler; emits EventCode.INCOMING_DATA on each payload
+│   └── http_server.py         # POST / handler (logs and strips a top-level `note` field if present), GET /state debug dump, /record/save in record mode
 ├── state/
 │   ├── store.py               # GameState — snapshot store, drives rule monitors on every update
 │   ├── items.py               # Items / item type parsing (EmptyItem, NoChargeItem, SingleChargeItem, MultiChargeItem)
@@ -60,6 +60,7 @@ src/
 │   ├── item_monitors.py       # ItemMonitor subclasses + ITEM_MONITOR_REGISTRY / MIDAS_MONITOR_REGISTRY
 │   ├── ability_monitors.py    # AbilityMonitor + ABILITY_MONITOR_REGISTRY (cooldown-started tracking)
 │   └── map_monitor.py         # MapMonitor — day/night cycle transition detector
+├── recorder.py                # Recorder — keeps payloads in memory for --record, saves JSONL
 ├── monitors/
 │   ├── base.py                # Monitor ABC
 │   └── day_night.py           # Legacy day/night monitor (pre-rule-engine)
@@ -146,6 +147,12 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 ```
 
 `map_colours` is required when any rule uses `reset_light`. The plain array format remains supported for configs that don't use `reset_light`.
+
+Ability monitors follow an ability that transforms in place (Centaur's `centaur_work_horse` becomes `centaur_mount` in the same slot while active): they remember the target's slot, and the target's name vanishing from a slot while it was ready counts as the cooldown starting (fired once; the later revert does not fire again).
+
+## Record, replay and debugging
+
+`uv run python -m src.main --record` keeps every payload in memory; `GET /record/save` writes `recordings/gsi_*.jsonl` (`{"ts", "data"}` per line, optional `"note"`). `tools/replay.py <file>` POSTs a recording to a running app (`--speed`, `--instant`), and `--step` is an interactive stepper (next N frames, run to next change, diff, state dump, fired rules, `note` to annotate). Notes live in `<file>.notes.json` keyed by `ts` and are injected into the POSTed JSON as a top-level `note`, which the app logs and strips. `GET /state` returns `{version, raw, fired}` after draining the ingest queue; `GameState.raw` and `RuleEventBus.drain_fired()` exist for it. See the `dota-replay` skill (`.agents/skills/dota-replay/`) for the workflow. When a monitor misbehaves, reproduce it from a recording and inspect the per-frame diff first; the skill has a debugging checklist. Rules with no enabled actions are skipped at compile time, so use a harmless action (e.g. a light) when reproducing a bug.
 
 ## Build & Release
 

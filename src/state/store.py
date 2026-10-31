@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 class GameState:
     def __init__(self, compiled_rules: CompiledRules, rule_bus: RuleEventBus, light_arbiter: LightingArbiter):
         self._version: int = 0
+        self.raw: dict | None = None  # latest payload as received, for the /state debug endpoint
         self.items: Items | None = None
         self.abilities: Abilities | None = None
         self.map: MapState | None = None
@@ -34,6 +35,7 @@ class GameState:
         # or controlling lights, monitors must emit an event onto RuleEventBus and
         # let ActionExecutor handle it asynchronously.
         self._version += 1
+        self.raw = data
 
         items = data.get("items")
         abilities = data.get("abilities")

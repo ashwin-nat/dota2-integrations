@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Generator
 
 
@@ -17,9 +18,24 @@ class Ability:
     ultimate: bool
 
 
-@dataclass
+@dataclass(frozen=True)
 class Abilities:
     slots: dict[str, Ability]
+
+    @cached_property
+    def _by_name(self) -> dict[str, Ability]:
+        index: dict[str, Ability] = {}
+        for ability in self:
+            index.setdefault(ability.name, ability)
+        return index
+
+    def find(self, name: str) -> Ability | None:
+        """Return the first slot holding the named ability, or None.
+
+        The name index is built on first use, so every monitor evaluating the
+        same snapshot shares one pass over the slots.
+        """
+        return self._by_name.get(name)
 
     def __iter__(self) -> Generator[Ability, None, None]:
         yield from self.slots.values()
