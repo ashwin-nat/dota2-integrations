@@ -147,6 +147,7 @@ if __name__ == "__main__":
     _enter_macos_app_dir()
     parser = argparse.ArgumentParser()
     parser.add_argument("--record", action="store_true", help="keep incoming payloads in memory; /record/save writes them to recordings/*.jsonl")
+    parser.add_argument("--no-browser", action="store_true", help="do not open the rules editor in the browser")
     args = parser.parse_args()
     setup_logging()
     asyncio.run(main(record=args.record))
