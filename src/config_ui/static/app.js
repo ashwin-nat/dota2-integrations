@@ -206,6 +206,72 @@ function renderStatus(text, cls) {
   status.className = `status ${dirty ? "dirty" : "ok"}`;
 }
 
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function actionText(a) {
+  if (a.type === "play_sound") return `play ${a.file || "(no sound)"}${a.volume != null ? ` at ${a.volume}%` : ""}`;
+  if (a.type === "light") return `light rgb(${a.r}, ${a.g}, ${a.b})`;
+  if (a.type === "reset_light") return "reset light";
+  return a.type;
+}
+
+// Human-readable list of differences between the saved config and the editor's copy.
+function describeChanges() {
+  const was = JSON.parse(S.saved);
+  const now = cleanedConfig();
+  const out = [];
+  const add = (label, detail, monitor) => out.push({ label, detail, trigger: monitor && describeTrigger(monitor) });
+
+  if (was.sound?.volume !== now.sound?.volume) add("Master volume", `${was.sound?.volume}% → ${now.sound?.volume}%`);
+  if (was.lighting?.enabled !== now.lighting?.enabled) add("Lighting", now.lighting.enabled ? "enabled" : "disabled");
+  if (was.lighting?.vendor !== now.lighting?.vendor) add("Lighting vendor", `${was.lighting?.vendor} → ${now.lighting?.vendor}`);
+  if (!same(was.map_colours, now.map_colours)) add("Day/night colours", "changed");
+
+  const wasRules = new Map((was.rules || []).map((r) => [r.id, r]));
+  const nowRules = new Map(now.rules.map((r) => [r.id, r]));
+  const title = (r) => describeTrigger(r.monitor).title;
+  for (const [id, r] of nowRules) {
+    const old = wasRules.get(id);
+    if (!old) { add(`New rule: ${title(r)}`, r.actions.map(actionText).join(", "), r.monitor); continue; }
+    const parts = [];
+    if (!same(old.monitor, r.monitor)) parts.push(`trigger ${title(old)} → ${title(r)}`);
+    if (!same(old.actions, r.actions)) {
+      const o = old.actions.map(actionText), n = r.actions.map(actionText);
+      parts.push(`actions: ${o.join(", ") || "none"} → ${n.join(", ") || "none"}`);
+    }
+    for (const k of Object.keys({ ...old, ...r })) {
+      if (k === "id" || k === "monitor" || k === "actions" || same(old[k], r[k])) continue;
+      parts.push(`${k}: ${JSON.stringify(old[k] ?? null)} → ${JSON.stringify(r[k] ?? null)}`);
+    }
+    if (parts.length) add(`Edited rule: ${title(r)}`, parts.join("; "), r.monitor);
+  }
+  for (const [id, r] of wasRules) if (!nowRules.has(id)) add(`Deleted rule: ${title(r)}`, r.actions.map(actionText).join(", "), r.monitor);
+  const common = (m, other) => [...m.keys()].filter((id) => other.has(id));
+  if (!same(common(wasRules, nowRules), common(nowRules, wasRules))) add("Rule order", "changed");
+
+  if (!out.length) add("Other settings", "changed");
+  return out;
+}
+
+function showChanges() {
+  if (!S.config || !isDirty()) return;
+  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const items = describeChanges();
+  const backdrop = h("div", { class: "modal-backdrop", onmousedown: (e) => { if (e.target === backdrop) close(); } },
+    h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Unsaved changes" },
+      h("div", { class: "modal-head" }, h("h2", {}, "Unsaved changes"), h("button", { class: "btn btn-ghost btn-sm", "aria-label": "Close", onclick: close }, "✕")),
+      h("ul", { class: "changes" }, items.map((c) => h("li", {},
+        c.trigger ? h("span", { class: `thumb ${c.trigger.square ? "square" : ""}`, style: c.trigger.img ? { backgroundImage: `url("${c.trigger.img}")` } : null }, c.trigger.glyph || "") : null,
+        h("div", {}, h("strong", {}, c.label), c.detail ? h("div", { class: "hint" }, c.detail) : null)))),
+      h("div", { class: "modal-foot" },
+        h("span", { style: { flex: 1 } }),
+        h("button", { class: "btn btn-ghost", onclick: close }, "Close"),
+        h("button", { class: "btn btn-gold", onclick: () => { close(); save(); } }, "Save"))));
+  document.body.append(backdrop);
+  document.addEventListener("keydown", onKey);
+}
+
 function locToText(loc) {
   if (loc[0] === "rules" && typeof loc[1] === "number") {
     const rule = cleanedConfig().rules[loc[1]];
@@ -324,6 +390,7 @@ $("#master-volume").addEventListener("input", (e) => {
 $("#lighting-enabled").addEventListener("change", (e) => { S.config.lighting.enabled = e.target.checked; markDirty(); });
 $("#lighting-vendor").addEventListener("change", (e) => { S.config.lighting.vendor = e.target.value; markDirty(); });
 $("#save").addEventListener("click", save);
+$("#status").addEventListener("click", (e) => { if (e.currentTarget.classList.contains("dirty")) showChanges(); });
 $("#power").addEventListener("click", powerOff);
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); if (isDirty()) save(); }
