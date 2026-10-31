@@ -54,8 +54,8 @@ async def main() -> None:
     rule_bus = RuleEventBus(arbiter)
     compiled = compile_rules(rules_config.rules, rule_bus)
     state = GameState(compiled, rule_bus, arbiter)
-    n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
-    logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
+    n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors) + len(compiled.ability_monitors)
+    logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero, {len(compiled.ability_monitors)} ability)")
     # -------------------------
 
     async def ingest() -> None:
