@@ -72,10 +72,8 @@ async def main(record: bool = False) -> None:
                     await f.write(json.dumps(data, indent=2))
                 logger.exception(f"Error processing update: {e} \n Dumped data to {file_name}")
 
-    if record:
-        recorder = Recorder()
-    else:
-        recorder = None
+    recorder = Recorder() if record else None
+    if recorder is not None:
         logger.info("Record mode on: POST/GET http://127.0.0.1:6969/record/save writes the history to recordings/")
 
     tasks = [
