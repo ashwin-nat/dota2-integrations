@@ -71,6 +71,8 @@ async def main(record: bool = False) -> None:
                 async with aiofiles.open(file_name, "w") as f:
                     await f.write(json.dumps(data, indent=2))
                 logger.exception(f"Error processing update: {e} \n Dumped data to {file_name}")
+            finally:
+                queue.task_done()
 
     recorder = Recorder() if record else None
     if recorder is not None:
@@ -83,7 +85,7 @@ async def main(record: bool = False) -> None:
             asyncio.create_task(coro, name=name)
             for name, coro in executor.worker_coroutines(rule_bus).items()
         ],
-        asyncio.create_task(serve(queue, recorder), name="http_server"),
+        asyncio.create_task(serve(queue, recorder, state, rule_bus), name="http_server"),
     ]
 
     for task in tasks:

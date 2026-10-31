@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -57,6 +58,13 @@ class RuleEventBus:
         }
         self._game_time: int | None = None
         self._clock_time: int | None = None
+        self._fired: deque[str] = deque(maxlen=200)  # for the /state debug endpoint
+
+    def drain_fired(self) -> list[str]:
+        """Events fired since the last call (debug aid; the replay stepper prints these)."""
+        fired = list(self._fired)
+        self._fired.clear()
+        return fired
 
     def set_time(self, game_time: int, clock_time: int) -> None:
         """Called by GameState on each update, before monitors run."""
@@ -75,6 +83,7 @@ class RuleEventBus:
         if not actions or ctx is None:
             return
         ctx = replace(ctx, game_time=self._game_time, clock_time=self._clock_time)
+        self._fired.append(str(ctx))
         for action in actions:
             if not action.enabled:
                 continue

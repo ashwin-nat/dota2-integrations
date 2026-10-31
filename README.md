@@ -39,6 +39,14 @@ uv run python tools/replay.py recordings/<file>.jsonl [--speed 2] [--instant] [-
 
 It POSTs the payloads to the running app using the recorded timing (`--speed` scales it, `--instant` removes the delays).
 
+### Step mode and notes
+
+`--step` turns replay into an interactive stepper: send the next N frames, jump to the next change (`c abilities.ability3`), show what changed (`d`), dump the app's raw state (`s [path]`), and see which rules fired. `h` lists the commands.
+
+Frames can be annotated after recording: `note <text>` at the current frame writes `recordings/<file>.notes.json` (keyed by the frame's `ts`). A frame can also carry an inline `"note"` field in its jsonl line. On replay the note is injected into the POSTed JSON as a top-level `note` field; the app logs `GSI note: ...` and strips it before processing.
+
+The stepper reads `GET /state` on the app, which returns the latest raw payload and the rule events fired since the last call.
+
 ## Dota 2 Configuration
 
 Create a config file at:
