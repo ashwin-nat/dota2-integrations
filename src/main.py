@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -16,6 +17,7 @@ from src.ingress.http_server import serve
 from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
 from src.log_setup import setup_logging
+from src.recorder import Recorder
 from src.rules import compile_rules, RulesConfig
 from src.rules.action_executor import ActionExecutor
 from src.rules.bus import RuleEventBus
@@ -40,7 +42,7 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     loop.default_exception_handler(context)
 
 
-async def main() -> None:
+async def main(record: bool = False) -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
     rules_config = RulesConfig.load(RULES_PATH)
@@ -58,8 +60,8 @@ async def main() -> None:
     rule_bus = RuleEventBus(arbiter)
     compiled = compile_rules(rules_config.rules, rule_bus)
     state = GameState(compiled, rule_bus, arbiter)
-    n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors)
-    logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero)")
+    n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors) + len(compiled.ability_monitors)
+    logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, {len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero, {len(compiled.ability_monitors)} ability)")
     # -------------------------
 
     def reload_rules(config: RulesConfig) -> bool:
@@ -82,7 +84,12 @@ async def main() -> None:
                 async with aiofiles.open(file_name, "w") as f:
                     await f.write(json.dumps(data, indent=2))
                 logger.exception(f"Error processing update: {e} \n Dumped data to {file_name}")
+            finally:
+                queue.task_done()
 
+    recorder = Recorder() if record else None
+    if recorder is not None:
+        logger.info("Record mode on: POST/GET http://127.0.0.1:6969/record/save writes the history to recordings/")
 
     tasks = [
         asyncio.create_task(ingest(), name="ingest"),
@@ -96,6 +103,9 @@ async def main() -> None:
                 queue,
                 lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound, shutdown=stop.set),
                 on_started=_open_editor,
+                recorder=recorder,
+                state=state,
+                rule_bus=rule_bus,
             ),
             name="http_server",
         ),
@@ -135,5 +145,8 @@ def _enter_macos_app_dir() -> None:
 
 if __name__ == "__main__":
     _enter_macos_app_dir()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--record", action="store_true", help="keep incoming payloads in memory; /record/save writes them to recordings/*.jsonl")
+    args = parser.parse_args()
     setup_logging()
-    asyncio.run(main())
+    asyncio.run(main(record=args.record))
