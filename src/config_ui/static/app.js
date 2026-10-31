@@ -1323,6 +1323,7 @@ function renderShareSetup() {
       h("li", {}, "In Drive for desktop settings, choose ", h("strong", {}, "Mirror files"), ", or right-click the folder → ", h("strong", {}, "Available offline"), ", so sounds play instantly in-game."),
       h("li", {}, "Then everyone picks that folder below.")),
     h("label", { class: "field" }, h("span", { class: "lbl" }, "Your name"), nameInput),
+    sh.enabled ? h("button", { class: "btn", title: "Keep the current shared folder and just change your name", onclick: () => choose(sh.folder) }, "Save name") : null,
     h("div", { class: "section-title" }, "Shared folder"),
     picker,
     h("button", { class: "btn btn-ghost", onclick: () => { S.shareSetup = null; render(); } }, "Cancel"));
