@@ -47,9 +47,9 @@ def make_icon(open_editor: Callable[[], None], quit_app: Callable[[], None]):
         import pystray
 
         icon = pystray.Icon(
-            "juke", _image(), "Juke",
+            "soundbo", _image(), "Soundbo",
             menu=pystray.Menu(
-                pystray.MenuItem("Open Juke", lambda *_: open_editor(), default=True),
+                pystray.MenuItem("Open Soundbo", lambda *_: open_editor(), default=True),
                 pystray.MenuItem("Quit", lambda *_: quit_app()),
             ),
         )

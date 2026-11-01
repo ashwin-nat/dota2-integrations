@@ -310,7 +310,7 @@ async function save() {
 
 async function powerOff() {
   const unsaved = isDirty() ? "\n\nYou have unsaved changes. They will be lost." : "";
-  if (!confirm(`Turn off Juke?\n\nGame sounds and lights stop until you open the app again.${unsaved}`)) return;
+  if (!confirm(`Turn off Soundbo?\n\nGame sounds and lights stop until you open the app again.${unsaved}`)) return;
   try {
     await api("/api/shutdown", { method: "POST" });
   } catch (e) {
@@ -321,10 +321,10 @@ async function powerOff() {
   previewAudio?.pause();
   document.body.replaceChildren(h("div", { class: "off-screen" },
     h("div", { class: "off-glyph" }, "⏻"),
-    h("h1", {}, "Juke is off"),
+    h("h1", {}, "Soundbo is off"),
     h("p", {}, "Open the app again to bring back your sounds, lights and this editor. You can close this tab."),
     S.dataDir ? h("p", { class: "hint" }, "Your rules, sounds and logs are in ", h("code", {}, S.dataDir)) : null));
-  document.title = "Juke (off)";
+  document.title = "Soundbo (off)";
 }
 
 // ---- Toasts ----
@@ -1356,7 +1356,7 @@ function renderInvite() {
   if (inv.loading) return h("div", { class: "share-card invite" }, h("div", { class: "share-who" }, "Preparing invite links…"), close);
   if (inv.error) return h("div", { class: "share-card invite" }, h("p", { class: "insp-warn" }, inv.error), close);
   const linkRow = (url, what) => h("div", { class: "invite-link" }, h("code", {}, url), h("button", { class: "btn btn-sm", onclick: () => copyText(url, what) }, "Copy"));
-  const message = (url) => `Join our Dota sounds in Juke: open the app → Friends & packs → paste this link → Join.\n${url}`;
+  const message = (url) => `Join our Dota sounds in Soundbo: open the app → Friends & packs → paste this link → Join.\n${url}`;
   const reader = inv.library_link
     ? [linkRow(inv.library_link, "the library link"),
       inv.library_public

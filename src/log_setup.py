@@ -3,7 +3,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-LOG_PATH = Path("logs/juke.log")
+LOG_PATH = Path("logs/soundbo.log")
 
 
 def setup_logging(

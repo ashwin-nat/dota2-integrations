@@ -13,11 +13,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-CFG_NAME = "gamestate_integration_juke.cfg"
+CFG_NAME = "gamestate_integration_soundbo.cfg"
 OLD_CFG_NAMES = ("gamestate_integration_rule_forge.cfg",)
 DOTA_CFG = Path("steamapps", "common", "dota 2 beta", "game", "dota", "cfg")
 
-CFG_TEMPLATE = """"juke"
+CFG_TEMPLATE = """"soundbo"
 {{
     "uri"           "http://127.0.0.1:{port}/"
     "timeout"       "5.0"

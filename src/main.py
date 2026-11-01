@@ -209,7 +209,7 @@ def _app_already_running() -> bool:
         return False
 
 
-APP_DIR_NAME = "Juke"
+APP_DIR_NAME = "Soundbo"
 OLD_APP_DIR_NAME = "dota2-integrations"
 
 
@@ -290,7 +290,7 @@ if __name__ == "__main__":
     except PortInUse:
         # Double-clicking the app again is the usual cause: show the running one instead
         if _app_already_running():
-            logger.info(f"Juke is already running at {BASE_URL}; opening its editor")
+            logger.info(f"Soundbo is already running at {BASE_URL}; opening its editor")
             _open_editor(BASE_URL, force=True)
             sys.exit(0)
         logger.error(

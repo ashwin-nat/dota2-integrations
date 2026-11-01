@@ -1,9 +1,9 @@
 ---
 name: dota-setup
-description: First-time setup of the Juke app on a machine — install deps, install the Dota 2 GSI config into the game folder, choose and configure a lighting vendor (Tapo, Tuya, log, or none), and smoke-test the receiver. Use when the user asks to set up, install, or get the app running, or when Dota isn't sending data / the lights aren't connecting. Not for adding or editing rules (use dota-rules).
+description: First-time setup of the Soundbo app on a machine — install deps, install the Dota 2 GSI config into the game folder, choose and configure a lighting vendor (Tapo, Tuya, log, or none), and smoke-test the receiver. Use when the user asks to set up, install, or get the app running, or when Dota isn't sending data / the lights aren't connecting. Not for adding or editing rules (use dota-rules).
 ---
 
-# Juke setup
+# Soundbo setup
 
 Walk the user through setup one step at a time. Check what is already done before doing it; skip finished steps instead of redoing them. Ask before overwriting any existing file.
 
@@ -25,10 +25,10 @@ On Linux the default Steam root is `~/.steam/steam`, on macOS `~/Library/Applica
 
 **List the folder first.** If a cfg already points at `http://127.0.0.1:6969/`, setup is already done; show it to the user and move on.
 
-Otherwise write `gamestate_integration_juke.cfg`:
+Otherwise write `gamestate_integration_soundbo.cfg`:
 
 ```
-"juke"
+"soundbo"
 {
     "uri"           "http://127.0.0.1:6969/"
     "timeout"       "5.0"
@@ -82,7 +82,7 @@ Sound files go in `media/`, which is gitignored, so each machine needs its own c
 ## 5. Smoke test
 
 1. Start the app in the background: `uv run python -m src.main`.
-2. In the output (also written to `logs/juke.log`), look for `Rule engine ready: …` and `Listening on http://127.0.0.1:6969`. For tapo/tuya, a connection error at startup means the IP or credentials are wrong.
+2. In the output (also written to `logs/soundbo.log`), look for `Rule engine ready: …` and `Listening on http://127.0.0.1:6969`. For tapo/tuya, a connection error at startup means the IP or credentials are wrong.
 3. Check the endpoint: POST `{}` to `http://127.0.0.1:6969/`. It should return `OK`. Payloads from outside a running match are ignored by design.
 4. Ask the user to launch Dota and start a demo hero or a bot match. The log should print `Hero abilities:` once the match is in progress. That confirms GSI data is arriving.
 5. Stop the background app when done.

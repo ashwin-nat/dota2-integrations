@@ -83,7 +83,7 @@ def export_pack(name: str) -> bytes:
     return buf.getvalue()
 
 
-LIBRARY_NAME = "Juke library.zip"
+LIBRARY_NAME = "Soundbo library.zip"
 OLD_LIBRARY_NAMES = ("Rule Forge library.zip",)
 _FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 
@@ -156,7 +156,7 @@ def _library_info(data: bytes) -> dict | None:
 
 
 def write_library(folder: Path) -> bool:
-    """Refresh <folder>/Juke library.zip, the read-only link for friends without Drive.
+    """Refresh <folder>/Soundbo library.zip, the read-only link for friends without Drive.
 
     Every admin's app runs this. The zip only depends on the folder's contents, and a copy
     is only replaced by a newer one (or one with sounds that hadn't synced for its writer),
@@ -241,7 +241,7 @@ def import_pack(data: bytes, source: str | None = None) -> dict:
         z = zipfile.ZipFile(io.BytesIO(data))
         meta = json.loads(z.read("pack.json"))
     except (zipfile.BadZipFile, KeyError, ValueError) as e:
-        raise PackError("That isn't a Juke sound pack (no pack.json inside)") from e
+        raise PackError("That isn't a Soundbo sound pack (no pack.json inside)") from e
     if not isinstance(meta, dict) or not isinstance(meta.get("rules", []), list):
         raise PackError("The pack's pack.json is damaged")
     name = str(meta.get("name") or "Pack")[:40]

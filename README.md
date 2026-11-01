@@ -1,25 +1,25 @@
-# Juke
+# Soundbo
 
-A game soundboard that reacts to your plays. Juke plays your sounds and sets your smart lights when things happen in your game. Dota 2 is the first integration: it receives [Dota 2 GSI](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools/GSI) (Game State Integration) payloads and runs your rules on them. Juke used to be called dota2-integrations (and its editor Rule Forge); the app moves your old settings over by itself.
+A game soundboard that reacts to your plays. Soundbo plays your sounds and sets your smart lights when things happen in your game. Dota 2 is the first integration: it receives [Dota 2 GSI](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools/GSI) (Game State Integration) payloads and runs your rules on them. Soundbo used to be called dota2-integrations (and its editor Rule Forge); the app moves your old settings over by itself.
 
 ## Download (no Python needed)
 
 Grab the latest build from the [Releases page](https://github.com/ashwin-nat/dota2-integrations/releases):
 
-- **Windows:** `juke-windows.exe`
-- **Mac (Apple Silicon, M1 and later):** `juke-mac.zip`
-- **Mac (Intel):** `juke-mac-intel.zip`
+- **Windows:** `soundbo-windows.exe`
+- **Mac (Apple Silicon, M1 and later):** `soundbo-mac.zip`
+- **Mac (Intel):** `soundbo-mac-intel.zip`
 
-Starting the app opens the rules editor in your browser. It also sets up Dota 2 to send it game state, by writing `gamestate_integration_juke.cfg` into every Dota install it finds (restart Dota if it was running). The app has no window of its own. It shows a ◆ icon in the menu bar (Mac) or the system tray (Windows); click it to reopen the editor, or choose **Quit**. On a Mac, clicking the app's Dock icon also reopens the editor.
+Starting the app opens the rules editor in your browser. It also sets up Dota 2 to send it game state, by writing `gamestate_integration_soundbo.cfg` into every Dota install it finds (restart Dota if it was running). The app has no window of its own. It shows a ◆ icon in the menu bar (Mac) or the system tray (Windows); click it to reopen the editor, or choose **Quit**. On a Mac, clicking the app's Dock icon also reopens the editor.
 
-Settings, sounds and logs (`logs/juke.log`) are kept in `~/Library/Application Support/Juke/` on a Mac and `%APPDATA%\Juke\` on Windows. A `dota2-integrations` folder from before the rename is moved there on first launch. An older Windows setup with `rules.json` next to the .exe keeps using that folder.
+Settings, sounds and logs (`logs/soundbo.log`) are kept in `~/Library/Application Support/Soundbo/` on a Mac and `%APPDATA%\Soundbo\` on Windows. A `dota2-integrations` folder from before the rename is moved there on first launch. An older Windows setup with `rules.json` next to the .exe keeps using that folder.
 
 **A build for your group.** Run the *Build* workflow from the Actions tab with your library link (see below) in **library_link**. Friends who run that build get the group's sounds on first launch, and they stay up to date, with no setup at all.
 
 **First launch on Mac:** the app isn't signed by Apple, so macOS blocks it the first time. Unzip it, move it to Applications, double-click it, then go to **System Settings → Privacy & Security** and click **Open Anyway**. If macOS says the app "is damaged", run this once in Terminal:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Juke.app
+xattr -dr com.apple.quarantine /Applications/Soundbo.app
 ```
 
 ## Requirements
@@ -57,7 +57,7 @@ Lights, webhooks (they can hold API keys), logs and light passwords always stay 
 **The quick way: admins and listeners.** One or two people (the admins) add and edit the sounds through a shared Google Drive folder. Everyone else just listens, with nothing to install.
 
 - **Listeners:** paste the *library link* an admin sent into the box at the top of **Friends & packs** and press **Join**. The group's sounds play in your games straight away and update by themselves every 30 minutes.
-- **Admins** keep the library current without doing anything: every admin's app writes `Juke library.zip` into the shared folder whenever someone changes their rules or clips. It holds everyone's sound rules and soundboard clips with their sounds. In the editor, **Invite friends** shows both links and checks the library link works. Before listeners can open it, set its sharing to *Anyone with the link* in Drive once.
+- **Admins** keep the library current without doing anything: every admin's app writes `Soundbo library.zip` into the shared folder whenever someone changes their rules or clips. It holds everyone's sound rules and soundboard clips with their sounds. In the editor, **Invite friends** shows both links and checks the library link works. Before listeners can open it, set its sharing to *Anyone with the link* in Drive once.
 - **New admins** need [Google Drive for desktop](https://www.google.com/drive/download/) and the folder shared with them as **Editor**. They paste the folder link from **Invite friends** (or from Drive's share email) into the same box. The app tells them what's left to do: install Drive, then add the folder to My Drive (**Organize → Add shortcut**). It joins by itself once the folder appears on their computer, and then fetches the sounds so the first one doesn't play late.
 
 **Sound packs.** **Export my pack** downloads one `.zip` with your own rules, soundboard clips and the sounds they use.
@@ -109,7 +109,7 @@ Create a config file at:
 Minimum contents:
 
 ```
-"juke"
+"soundbo"
 {
     "uri"           "http://127.0.0.1:6969/"
     "timeout"       "5.0"

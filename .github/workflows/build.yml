@@ -22,12 +22,12 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset: juke-windows.exe
+            asset: soundbo-windows.exe
           - os: macos-latest
-            asset: juke-mac.zip
+            asset: soundbo-mac.zip
           # macos-latest is Apple Silicon only; Intel Macs need their own build
           - os: macos-15-intel
-            asset: juke-mac-intel.zip
+            asset: soundbo-mac-intel.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -46,26 +46,26 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           # --windowed: no console window; the tray icon is how people open the editor and quit
-          uv run pyinstaller --onefile --windowed --paths . --name Juke \
+          uv run pyinstaller --onefile --windowed --paths . --name Soundbo \
             --hidden-import pystray._win32 \
             --add-data "src/config_ui/static:src/config_ui/static" \
             $( [ -f src/library_link.txt ] && echo --add-data "src/library_link.txt:src" ) src/main.py
-          mv dist/Juke.exe "dist/${{ matrix.asset }}"
+          mv dist/Soundbo.exe "dist/${{ matrix.asset }}"
         shell: bash
 
-      # --windowed makes PyInstaller produce a dist/Juke.app bundle.
+      # --windowed makes PyInstaller produce a dist/Soundbo.app bundle.
       # Zip with ditto, not zip -r: zip copies the bundle's symlinks as files, which
       # breaks the code signature and macOS then reports the app as "damaged".
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |
-          uv run pyinstaller --windowed --paths . --name Juke \
-            --osx-bundle-identifier io.github.ashwin-nat.juke \
+          uv run pyinstaller --windowed --paths . --name Soundbo \
+            --osx-bundle-identifier io.github.ashwin-nat.soundbo \
             --hidden-import pystray._darwin \
             --add-data "src/config_ui/static:src/config_ui/static" \
             $( [ -f src/library_link.txt ] && echo --add-data "src/library_link.txt:src" ) src/main.py
-          codesign --verify --deep --strict dist/Juke.app
-          ditto -c -k --sequesterRsrc --keepParent dist/Juke.app "dist/${{ matrix.asset }}"
+          codesign --verify --deep --strict dist/Soundbo.app
+          ditto -c -k --sequesterRsrc --keepParent dist/Soundbo.app "dist/${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v7
         with:
