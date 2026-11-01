@@ -31,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.13"
       - run: uv sync --frozen
@@ -67,7 +67,7 @@ jobs:
           codesign --verify --deep --strict dist/dota2-integrations.app
           ditto -c -k --sequesterRsrc --keepParent dist/dota2-integrations.app "dist/${{ matrix.asset }}"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
