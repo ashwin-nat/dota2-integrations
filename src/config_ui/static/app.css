@@ -217,6 +217,9 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
   color: var(--text);
 }
 .board-head input[type=search] { width: 240px; }
+.rule-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.rule-toolbar input[type=search] { flex: 1 1 220px; min-width: 0; }
+.rule-toolbar select { flex: 0 1 auto; }
 
 .section-title {
   display: flex; align-items: center; gap: 10px;

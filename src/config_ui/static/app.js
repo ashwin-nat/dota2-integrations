@@ -54,6 +54,10 @@ const S = {
   clips: [],          // soundboard.json clips (saved immediately, not via the Save button)
   maxClip: 5.2,
   clipQuery: "",
+  ruleQuery: "",
+  ruleKind: "",       // All rules filters: "" | item | ability | game
+  ruleAction: "",     // "" | play_sound | light | webhook | missing
+  ruleSort: "default",
   sharing: null,      // /api/sharing: folder, name, friends' rules and clips
   shareSetup: null,   // folder picker state while turning sharing on or changing it
 };
@@ -437,8 +441,52 @@ function slot({ img, label, cost, cls = "", count = 0, selected, onclick, title 
   return el;
 }
 
+const RULE_KINDS = [["", "All triggers"], ["item", "Items"], ["ability", "Abilities"], ["game", "Game events"]];
+const RULE_ACTIONS = [["", "Any action"], ["play_sound", "Plays a sound"], ["light", "Sets a light"], ["webhook", "Calls a webhook"], ["missing", "Missing sound file"]];
+const RULE_SORTS = [["default", "File order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["kind", "Trigger type"], ["actions", "Most actions"]];
+
+const ruleKind = (m) => (["item", "blink", "midas"].includes(m.type) ? "item" : m.type === "ability" ? "ability" : "game");
+
+function visibleRules() {
+  const q = S.ruleQuery.trim().toLowerCase();
+  const rules = S.config.rules.filter((r) => {
+    if (S.ruleKind && ruleKind(r.monitor) !== S.ruleKind) return false;
+    if (S.ruleAction === "missing" && !r.actions.some((a) => a.type === "play_sound" && !hasMedia(a.file))) return false;
+    if (S.ruleAction && S.ruleAction !== "missing" && !r.actions.some((a) => a.type === S.ruleAction)) return false;
+    if (!q) return true;
+    const d = describeTrigger(r.monitor);
+    const text = [r.id, d.title, d.sub, ...r.actions.map((a) => (a.type === "play_sound" ? fileName(a.file) : a.url || ""))];
+    return text.some((t) => t && t.toLowerCase().includes(q));
+  });
+  const title = (r) => describeTrigger(r.monitor).title.toLowerCase();
+  const order = { item: 0, ability: 1, game: 2 };
+  const sorts = {
+    name: (a, b) => title(a).localeCompare(title(b)),
+    "name-desc": (a, b) => title(b).localeCompare(title(a)),
+    kind: (a, b) => order[ruleKind(a.monitor)] - order[ruleKind(b.monitor)] || title(a).localeCompare(title(b)),
+    actions: (a, b) => activeActions(b).length - activeActions(a).length || title(a).localeCompare(title(b)),
+  };
+  return sorts[S.ruleSort] ? [...rules].sort(sorts[S.ruleSort]) : rules;
+}
+
+function ruleToolbar() {
+  const search = h("input", { type: "search", placeholder: "Search rules, heroes, sounds…", value: S.ruleQuery, "aria-label": "Search rules" });
+  search.addEventListener("input", (e) => { S.ruleQuery = e.target.value; rerenderKeepFocus(search); });
+  const pick = (key, options, label) => {
+    const sel = h("select", { "aria-label": label, onchange: (e) => { S[key] = e.target.value; render(); } },
+      options.map(([v, text]) => h("option", { value: v, selected: S[key] === v }, text)));
+    return sel;
+  };
+  const filtered = S.ruleQuery || S.ruleKind || S.ruleAction;
+  return h("div", { class: "rule-toolbar" }, search,
+    pick("ruleKind", RULE_KINDS, "Filter by trigger"),
+    pick("ruleAction", RULE_ACTIONS, "Filter by action"),
+    pick("ruleSort", RULE_SORTS, "Sort rules"),
+    filtered ? h("button", { class: "btn btn-sm", onclick: () => { S.ruleQuery = S.ruleKind = S.ruleAction = ""; render(); } }, "Clear") : null);
+}
+
 function renderRules() {
-  const rules = S.config.rules;
+  const rules = visibleRules();
   const live = rules.filter((r) => activeActions(r).length);
   const idle = rules.filter((r) => !activeActions(r).length);
   const row = (r) => {
@@ -469,8 +517,10 @@ function renderRules() {
     h("div", { class: "board-head" }, h("h1", {}, "All rules")),
     h("p", { class: "hint" }, "Every trigger that does something. Click one to edit it, or browse Items, Heroes and Game events to add new ones."),
     followedNote(),
-    h("div", { class: "section-title" }, "Active", h("span", { class: "count" }, live.length)),
-    h("div", { class: "rule-list" }, live.map(row)),
+    ruleToolbar(),
+    !rules.length ? h("p", { class: "hint" }, S.config.rules.length ? "No rules match." : "No rules yet.") : null,
+    live.length ? h("div", { class: "section-title" }, "Active", h("span", { class: "count" }, live.length)) : null,
+    live.length ? h("div", { class: "rule-list" }, live.map(row)) : null,
     idle.length ? h("div", { class: "section-title" }, "Doing nothing yet", h("span", { class: "count" }, idle.length)) : null,
     idle.length ? h("div", { class: "rule-list" }, idle.map(row)) : null,
   ];
