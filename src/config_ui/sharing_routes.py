@@ -55,8 +55,9 @@ def _looks_shared(p: Path) -> bool:
 
 def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[RulesConfig], bool]) -> None:
     """Mount /api/sharing: turn the shared folder on or off, follow friends, browse for the folder."""
+    routes = web.RouteTableDef()
 
-    def state() -> dict:
+    def sharing_state() -> dict:
         s = sharing.settings()
         folder = sharing.shared_folder()
         return {
@@ -85,9 +86,11 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
     # listings) or held up by a macOS permission prompt, so it runs off the event loop and
     # never stalls in-game sounds.
 
+    @routes.get("/api/sharing")
     async def get_state(_: web.Request) -> web.Response:
-        return web.json_response(await asyncio.to_thread(state))
+        return web.json_response(await asyncio.to_thread(sharing_state))
 
+    @routes.put("/api/sharing")
     async def put_state(request: web.Request) -> web.Response:
         body = await request.json()
         try:
@@ -95,13 +98,14 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
         except (sharing.SharingError, OSError) as e:
             return web.json_response({"ok": False, "error": str(e)}, status=400)
         recompile()
-        return web.json_response({"ok": True, **result, **await asyncio.to_thread(state)})
+        return web.json_response({"ok": True, **result, **await asyncio.to_thread(sharing_state)})
 
+    @routes.post("/api/sharing/follow")
     async def follow(request: web.Request) -> web.Response:
         body = await request.json()
         sharing.set_following(str(body.get("name", "")), bool(body.get("follow")))
         recompile()
-        return web.json_response({"ok": True, **await asyncio.to_thread(state)})
+        return web.json_response({"ok": True, **await asyncio.to_thread(sharing_state)})
 
     def list_dir(path: Path) -> dict:
         dirs = sorted(
@@ -121,6 +125,7 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             "dirs": [{"name": n, "path": str(d), "shared": _looks_shared(d)} for n, d in entries[:500]],
         }
 
+    @routes.get("/api/sharing/browse")
     async def browse(request: web.Request) -> web.Response:
         raw = request.query.get("path")
         if not raw:
@@ -137,6 +142,7 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             return web.json_response({"ok": False, "error": f"Can't open {path}: {e.strerror or e}"}, status=400)
         return web.json_response(listing)
 
+    @routes.post("/api/sharing/join")
     async def join(request: web.Request) -> web.Response:
         """Join the shared folder behind a Drive folder link, once Drive for desktop has it."""
         body = await request.json()
@@ -162,8 +168,9 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
         recompile()
         # Drive streams files on first use; fetch them now so the first in-game sound isn't late
         asyncio.get_running_loop().run_in_executor(None, sharing.warm_cache)
-        return web.json_response({**base, "status": "joined", **result, **await asyncio.to_thread(state)})
+        return web.json_response({**base, "status": "joined", **result, **await asyncio.to_thread(sharing_state)})
 
+    @routes.get("/api/sharing/invite")
     async def invite(_: web.Request) -> web.Response:
         """Links to hand out: the folder for admins, the library .zip for everyone else."""
         folder = sharing.shared_folder()
@@ -186,6 +193,7 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
                 pass
         return web.json_response(out)
 
+    @routes.get("/api/pack/export")
     async def export_pack(_: web.Request) -> web.Response:
         name = sharing.settings().name
         data = await asyncio.to_thread(packs.export_pack, name)
@@ -193,6 +201,7 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             "Content-Disposition": f'attachment; filename="{name} sound pack.zip"',
         })
 
+    @routes.post("/api/packs")
     async def import_pack(request: web.Request) -> web.Response:
         known = {p["id"] for p in packs.list_packs()}
         try:
@@ -220,8 +229,9 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             sharing.set_following(f"{sharing.PACK_PREFIX}{record['id']}", True)
         recompile()
         sharing.publish_safely()
-        return web.json_response({"ok": True, "pack": {"id": record["id"], "name": record["name"], "library": record.get("library", False)}, **await asyncio.to_thread(state)})
+        return web.json_response({"ok": True, "pack": {"id": record["id"], "name": record["name"], "library": record.get("library", False)}, **await asyncio.to_thread(sharing_state)})
 
+    @routes.post("/api/packs/{id}/refresh")
     async def refresh_pack(request: web.Request) -> web.Response:
         pack = packs.load_pack(request.match_info["id"])
         if not pack:
@@ -232,22 +242,14 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             return web.json_response({"ok": False, "error": f"Couldn't update {pack['name']}: {e}"}, status=400)
         if changed:
             recompile()
-        return web.json_response({"ok": True, "changed": changed, **await asyncio.to_thread(state)})
+        return web.json_response({"ok": True, "changed": changed, **await asyncio.to_thread(sharing_state)})
 
+    @routes.delete("/api/packs/{id}")
     async def remove_pack(request: web.Request) -> web.Response:
         pack_id = request.match_info["id"]
         packs.remove_pack(pack_id)
         sharing.set_following(f"{sharing.PACK_PREFIX}{pack_id}", False)
         recompile()
-        return web.json_response({"ok": True, **await asyncio.to_thread(state)})
+        return web.json_response({"ok": True, **await asyncio.to_thread(sharing_state)})
 
-    app.router.add_get("/api/pack/export", export_pack)
-    app.router.add_post("/api/packs", import_pack)
-    app.router.add_post("/api/packs/{id}/refresh", refresh_pack)
-    app.router.add_delete("/api/packs/{id}", remove_pack)
-    app.router.add_get("/api/sharing", get_state)
-    app.router.add_put("/api/sharing", put_state)
-    app.router.add_post("/api/sharing/follow", follow)
-    app.router.add_get("/api/sharing/browse", browse)
-    app.router.add_post("/api/sharing/join", join)
-    app.router.add_get("/api/sharing/invite", invite)
+    app.add_routes(routes)

@@ -36,13 +36,17 @@ def setup_config_ui(
     shutdown: Callable[[], None] | None = None,
 ) -> None:
     """Mount the rules editor at /ui and its JSON API at /api on the GSI server's app."""
+    routes = web.RouteTableDef()
 
+    @routes.get("/ui")
     async def index(_: web.Request) -> web.FileResponse:
         return web.FileResponse(STATIC_DIR / "index.html")
 
+    @routes.get("/api/config")
     async def get_config(_: web.Request) -> web.Response:
         return web.json_response(json.loads(rules_path.read_text(encoding="utf-8")))
 
+    @routes.put("/api/config")
     async def put_config(request: web.Request) -> web.Response:
         try:
             data = await request.json()
@@ -59,6 +63,7 @@ def setup_config_ui(
         logger.info(f"Rules updated from editor: {len(config.rules)} rules")
         return web.json_response({"ok": True, "restart_required": restart_required})
 
+    @routes.get("/api/media")
     async def list_media(_: web.Request) -> web.Response:
         folder = media_dir()
         files = sorted(
@@ -67,6 +72,7 @@ def setup_config_ui(
         ) if folder.is_dir() else []
         return web.json_response([{"file": media_ref(p), "name": p.name, "size": p.stat().st_size} for p in files])
 
+    @routes.post("/api/media")
     async def upload_media(request: web.Request) -> web.Response:
         reader = await request.multipart()
         field = await reader.next()
@@ -103,6 +109,7 @@ def setup_config_ui(
         logger.info(f"Uploaded sound {dest} ({size} bytes)")
         return web.json_response({"ok": True, "file": media_ref(dest), "name": dest.name, "size": size})
 
+    @routes.post("/api/play")
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
         file = str(body.get("file", ""))
@@ -117,15 +124,18 @@ def setup_config_ui(
             return web.json_response({"ok": False, "error": f"{path.name} can't be played ({e})"}, status=400)
         return web.json_response({"ok": True})
 
+    @routes.get("/api/catalog")
     async def catalog(_: web.Request) -> web.Response:
         data = await load_catalog()
         if data is None:
             return web.json_response({"heroes": [], "items": [], "offline": True})
         return web.json_response(data)
 
+    @routes.get("/api/info")
     async def info(_: web.Request) -> web.Response:
         return web.json_response({"data_dir": str(Path.cwd()), "can_shutdown": shutdown is not None})
 
+    @routes.post("/api/shutdown")
     async def power_off(_: web.Request) -> web.Response:
         if shutdown is None:
             return web.json_response({"ok": False, "error": "Shutdown isn't available"}, status=400)
@@ -134,6 +144,7 @@ def setup_config_ui(
         asyncio.get_running_loop().call_later(0.3, shutdown)
         return web.json_response({"ok": True})
 
+    @routes.get("/")
     async def redirect_ui(_: web.Request) -> web.Response:
         raise web.HTTPFound("/ui")
 
@@ -143,19 +154,11 @@ def setup_config_ui(
             response.headers["Cache-Control"] = "no-cache"
 
     app.on_response_prepare.append(no_cache_ui)
-    app.router.add_get("/", redirect_ui)
-    app.router.add_get("/ui", index)
     app.router.add_static("/ui/static", STATIC_DIR)
-    app.router.add_get("/api/config", get_config)
-    app.router.add_put("/api/config", put_config)
-    app.router.add_get("/api/media", list_media)
-    app.router.add_post("/api/media", upload_media)
-    app.router.add_post("/api/play", play)
-    app.router.add_get("/api/catalog", catalog)
-    app.router.add_get("/api/info", info)
-    app.router.add_post("/api/shutdown", power_off)
     setup_soundboard(app, sound, rules_path, reload)
     setup_sharing(app, rules_path, reload)
+
+    @routes.get("/media/{name}")
     async def serve_media(request: web.Request) -> web.StreamResponse:
         # Looked up per request because the media folder moves when sharing is turned on or off
         path = media_dir() / request.match_info["name"]
@@ -163,4 +166,4 @@ def setup_config_ui(
             raise web.HTTPNotFound()
         return web.FileResponse(path)
 
-    app.router.add_get("/media/{name}", serve_media)
+    app.add_routes(routes)

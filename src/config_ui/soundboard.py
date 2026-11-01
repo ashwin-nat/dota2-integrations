@@ -142,6 +142,7 @@ def setup_soundboard(
     reload: Callable[[RulesConfig], bool],
 ) -> None:
     """Mount the soundboard API. Clips are MP3s in media/ named after the clip, so rules can use them too."""
+    routes = web.RouteTableDef()
 
     def retarget_rules(old: str, new: str | None) -> int:
         """Point rules at a renamed clip, or switch their sound off when it's deleted. Returns actions changed."""
@@ -205,9 +206,11 @@ def setup_soundboard(
                 return c
         raise web.HTTPNotFound(text=json.dumps({"ok": False, "error": "Unknown clip"}), content_type="application/json")
 
+    @routes.get("/api/soundboard")
     async def list_clips(_: web.Request) -> web.Response:
         return web.json_response({"clips": [c.model_dump() for c in _load()], "max_seconds": MAX_CLIP_SECONDS})
 
+    @routes.post("/api/soundboard")
     async def create_clip(request: web.Request) -> web.Response:
         # multipart: "meta" (JSON name/emoji/volume) then "file" (the trimmed WAV the editor rendered)
         reader = await request.multipart()
@@ -240,6 +243,7 @@ def setup_soundboard(
         logger.info(f"Soundboard clip added: {clip.name} ({clip.duration}s)")
         return web.json_response({"ok": True, "clip": clip.model_dump()})
 
+    @routes.patch("/api/soundboard/{id}")
     async def update_clip(request: web.Request) -> web.Response:
         clips = _load()
         clip = find(clips, request.match_info["id"])
@@ -258,6 +262,7 @@ def setup_soundboard(
         _save([updated if c.id == clip.id else c for c in clips])
         return web.json_response({"ok": True, "clip": updated.model_dump(), "renamed": renamed, "rules_changed": rules_changed})
 
+    @routes.delete("/api/soundboard/{id}")
     async def delete_clip(request: web.Request) -> web.Response:
         clips = _load()
         clip = find(clips, request.match_info["id"])
@@ -268,6 +273,7 @@ def setup_soundboard(
         logger.info(f"Soundboard clip deleted: {clip.name}")
         return web.json_response({"ok": True, "file": clip.file, "rules_changed": rules_changed})
 
+    @routes.post("/api/soundboard/{id}/play")
     async def play_clip(request: web.Request) -> web.Response:
         clip = find(_load(), request.match_info["id"])
         path = resolve(clip.file)
@@ -280,6 +286,7 @@ def setup_soundboard(
             return web.json_response({"ok": False, "error": f"{path.name} can't be played ({e})"}, status=400)
         return web.json_response({"ok": True})
 
+    @routes.post("/api/soundboard/fetch")
     async def fetch_link(request: web.Request) -> web.StreamResponse:
         url = str((await request.json()).get("url", "")).strip()
         if urlparse(url).scheme not in ("http", "https"):
@@ -296,14 +303,9 @@ def setup_soundboard(
         # The browser decodes and trims it, then uploads the clip like a local file
         return web.Response(body=body, content_type="application/octet-stream", headers={"X-Title": quote(title)})
 
+    @routes.post("/api/soundboard/stop")
     async def stop_all(_: web.Request) -> web.Response:
         sound.stop_all()
         return web.json_response({"ok": True})
 
-    app.router.add_get("/api/soundboard", list_clips)
-    app.router.add_post("/api/soundboard", create_clip)
-    app.router.add_patch("/api/soundboard/{id}", update_clip)
-    app.router.add_delete("/api/soundboard/{id}", delete_clip)
-    app.router.add_post("/api/soundboard/{id}/play", play_clip)
-    app.router.add_post("/api/soundboard/stop", stop_all)
-    app.router.add_post("/api/soundboard/fetch", fetch_link)
+    app.add_routes(routes)
