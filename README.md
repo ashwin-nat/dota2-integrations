@@ -2,8 +2,6 @@
 
 A game soundboard that reacts to your plays. Juke plays your sounds and sets your smart lights when things happen in your game. Dota 2 is the first integration: it receives [Dota 2 GSI](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools/GSI) (Game State Integration) payloads and runs your rules on them. Juke used to be called dota2-integrations (and its editor Rule Forge); the app moves your old settings over by itself.
 
-**Website:** https://ashwin-nat.github.io/dota2-integrations/ (source in `site/`, deployed by `.github/workflows/pages.yml`).
-
 ## Download (no Python needed)
 
 Grab the latest build from the [Releases page](https://github.com/ashwin-nat/dota2-integrations/releases):
