@@ -209,6 +209,10 @@ def _app_already_running() -> bool:
         return False
 
 
+APP_DIR_NAME = "Juke"
+OLD_APP_DIR_NAME = "dota2-integrations"
+
+
 def _enter_app_dir() -> None:
     """Keep rules.json, sounds, configs and logs in the user's app data folder in the packaged app.
 
@@ -218,14 +222,22 @@ def _enter_app_dir() -> None:
     if not getattr(sys, "frozen", False):
         return
     if sys.platform == "darwin":
-        app_dir = Path.home() / "Library" / "Application Support" / "dota2-integrations"
+        base = Path.home() / "Library" / "Application Support"
     elif sys.platform == "win32":
         if (Path(sys.executable).parent / "rules.json").exists():
-            app_dir = Path(sys.executable).parent
-        else:
-            app_dir = Path(os.environ.get("APPDATA") or Path.home()) / "dota2-integrations"
+            os.chdir(Path(sys.executable).parent)
+            return
+        base = Path(os.environ.get("APPDATA") or Path.home())
     else:
         return
+    app_dir = base / APP_DIR_NAME
+    old_dir = base / OLD_APP_DIR_NAME
+    if not app_dir.exists() and old_dir.is_dir():
+        # The app used to be called dota2-integrations: keep everyone's rules, sounds and settings
+        try:
+            old_dir.rename(app_dir)
+        except OSError:
+            app_dir = old_dir  # e.g. a file in it is open elsewhere; try again next launch
     app_dir.mkdir(parents=True, exist_ok=True)
     os.chdir(app_dir)
 
@@ -278,7 +290,7 @@ if __name__ == "__main__":
     except PortInUse:
         # Double-clicking the app again is the usual cause: show the running one instead
         if _app_already_running():
-            logger.info(f"Rule Forge is already running at {BASE_URL}; opening its editor")
+            logger.info(f"Juke is already running at {BASE_URL}; opening its editor")
             _open_editor(BASE_URL, force=True)
             sys.exit(0)
         logger.error(

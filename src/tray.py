@@ -47,9 +47,9 @@ def make_icon(open_editor: Callable[[], None], quit_app: Callable[[], None]):
         import pystray
 
         icon = pystray.Icon(
-            "rule-forge", _image(), "Rule Forge",
+            "juke", _image(), "Juke",
             menu=pystray.Menu(
-                pystray.MenuItem("Open Rule Forge", lambda *_: open_editor(), default=True),
+                pystray.MenuItem("Open Juke", lambda *_: open_editor(), default=True),
                 pystray.MenuItem("Quit", lambda *_: quit_app()),
             ),
         )

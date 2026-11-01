@@ -1,9 +1,9 @@
 ---
 name: dota-replay
-description: Record real Dota 2 GSI data and replay it into the dota2-integrations app, step by step if needed, to reproduce or debug a rule or monitor without launching the game. Use when the user says things like "I have a recording", "why didn't my rule fire", "reproduce this bug", "record my game", or "step through the replay". Not for writing rules (use dota-rules) or first-time install (use dota-setup).
+description: Record real Dota 2 GSI data and replay it into the Juke app, step by step if needed, to reproduce or debug a rule or monitor without launching the game. Use when the user says things like "I have a recording", "why didn't my rule fire", "reproduce this bug", "record my game", or "step through the replay". Not for writing rules (use dota-rules) or first-time install (use dota-setup).
 ---
 
-# dota2-integrations record and replay
+# Juke record and replay
 
 Recordings are JSONL files in `recordings/`: one `{"ts": ..., "data": <GSI payload>}` per line. The replay tool is `tools/replay.py`; it POSTs frames to a running app.
 

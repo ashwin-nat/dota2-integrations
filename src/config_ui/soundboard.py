@@ -53,7 +53,14 @@ def _load() -> list[Clip]:
     text = SOUNDBOARD_PATH.read_text(encoding="utf-8").strip()
     if not text:
         return []
-    return [Clip.model_validate(c) for c in json.loads(text).get("clips", [])]
+    clips = []
+    for c in json.loads(text).get("clips", []):
+        # A hand-edited or damaged entry shouldn't keep the whole app from starting
+        try:
+            clips.append(Clip.model_validate(c))
+        except ValidationError as e:
+            logger.warning(f"Skipping a broken soundboard clip {c.get('name') if isinstance(c, dict) else c!r}: {e.error_count()} problem(s)")
+    return clips
 
 
 def _save(clips: list[Clip]) -> None:

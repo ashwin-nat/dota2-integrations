@@ -83,7 +83,8 @@ def export_pack(name: str) -> bytes:
     return buf.getvalue()
 
 
-LIBRARY_NAME = "Rule Forge library.zip"
+LIBRARY_NAME = "Juke library.zip"
+OLD_LIBRARY_NAMES = ("Rule Forge library.zip",)
 _FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 
 
@@ -155,7 +156,7 @@ def _library_info(data: bytes) -> dict | None:
 
 
 def write_library(folder: Path) -> bool:
-    """Refresh <folder>/Rule Forge library.zip, the read-only link for friends without Drive.
+    """Refresh <folder>/Juke library.zip, the read-only link for friends without Drive.
 
     Every admin's app runs this. The zip only depends on the folder's contents, and a copy
     is only replaced by a newer one (or one with sounds that hadn't synced for its writer),
@@ -163,8 +164,12 @@ def write_library(folder: Path) -> bool:
     """
     if not (folder / "people").is_dir():
         return False  # Drive isn't running, or the folder went away
-    data, info = build_library(folder)
     target = folder / LIBRARY_NAME
+    for old_name in OLD_LIBRARY_NAMES:
+        # Renamed, not rewritten: Drive keeps the id, so the link friends have keeps working
+        if not target.exists() and (folder / old_name).exists():
+            os.rename(folder / old_name, target)
+    data, info = build_library(folder)
     try:
         current = target.read_bytes()
     except OSError:
@@ -236,7 +241,7 @@ def import_pack(data: bytes, source: str | None = None) -> dict:
         z = zipfile.ZipFile(io.BytesIO(data))
         meta = json.loads(z.read("pack.json"))
     except (zipfile.BadZipFile, KeyError, ValueError) as e:
-        raise PackError("That isn't a Rule Forge sound pack (no pack.json inside)") from e
+        raise PackError("That isn't a Juke sound pack (no pack.json inside)") from e
     if not isinstance(meta, dict) or not isinstance(meta.get("rules", []), list):
         raise PackError("The pack's pack.json is damaged")
     name = str(meta.get("name") or "Pack")[:40]

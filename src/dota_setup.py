@@ -13,10 +13,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-CFG_NAME = "gamestate_integration_rule_forge.cfg"
+CFG_NAME = "gamestate_integration_juke.cfg"
+OLD_CFG_NAMES = ("gamestate_integration_rule_forge.cfg",)
 DOTA_CFG = Path("steamapps", "common", "dota 2 beta", "game", "dota", "cfg")
 
-CFG_TEMPLATE = """"dota2-integrations"
+CFG_TEMPLATE = """"juke"
 {{
     "uri"           "http://127.0.0.1:{port}/"
     "timeout"       "5.0"
@@ -83,6 +84,9 @@ def install_gsi_config(port: int) -> list[Path]:
         folder = cfg / "gamestate_integration"
         try:
             folder.mkdir(exist_ok=True)
+            for old_name in OLD_CFG_NAMES:
+                if (folder / old_name).exists() and not (folder / CFG_NAME).exists():
+                    (folder / old_name).rename(folder / CFG_NAME)
             ours = re.compile(rf"(127\.0\.0\.1|localhost):{port}\b")
             if any(ours.search(f.read_text(encoding="utf-8", errors="replace")) for f in folder.glob("gamestate_integration_*.cfg")):
                 continue
