@@ -59,6 +59,8 @@ const S = {
   ruleAction: "",     // "" | play_sound | light | webhook | missing
   ruleSort: "default",
   sharing: null,      // /api/sharing: folder, name, friends' rules and clips
+  join: null,         // joining a shared folder from its link: { link, name, status }
+  invite: null,       // /api/sharing/invite links while the invite panel is open
   shareSetup: null,   // folder picker state while turning sharing on or changing it
 };
 
@@ -1228,17 +1230,16 @@ function renderFriends() {
   const sh = S.sharing;
   const out = [head];
 
-  // Packs: the no-install way (a link or a .zip)
-  const link = h("input", { type: "url", placeholder: "Paste a friend's pack link (Google Drive, Dropbox, …)", "aria-label": "Pack link" });
-  const addBtn = h("button", { class: "btn", onclick: () => importPackLink(link.value, addBtn) }, "Add pack");
+  // One box for every kind of invite: a library or pack link, or a shared folder link
+  const link = h("input", { type: "url", placeholder: "Paste the invite link a friend sent you", "aria-label": "Invite link", value: S.join?.link || "" });
+  const addBtn = h("button", { class: "btn btn-gold", onclick: () => useInviteLink(link.value, addBtn) }, "Join");
   link.addEventListener("keydown", (e) => { if (e.key === "Enter") addBtn.click(); });
   const packBar = h("div", { class: "pack-bar" }, link, addBtn);
   makeDropTarget(packBar, ([f]) => importPackFile(f), (f) => /\.zip$/i.test(f.name));
-  out.push(h("div", { class: "section-title" }, "Sound packs", h("span", { class: "count" }, sh.packs.length)));
+  out.push(h("div", { class: "section-title" }, "Libraries & packs", h("span", { class: "count" }, sh.packs.length)));
   out.push(packBar);
-  out.push(h("p", { class: "hint" }, "No install needed. ", h("strong", {}, "Share yours: "), "Export my pack, upload the .zip to Google Drive in your browser, and share it as \"Anyone with the link\". ",
-    h("strong", {}, "Add a friend's: "), "paste their link here, or drop their .zip on this box. Packs from a link check for updates every 30 minutes. To update yours, upload the new .zip in Drive with ",
-    h("em", {}, "Manage versions"), " so the link stays the same."));
+  if (S.join) out.push(renderJoin());
+  else out.push(h("p", { class: "hint" }, "Got a link from a friend? Paste it here. A library link needs nothing else installed and stays up to date by itself. You can also drop a pack .zip on this box."));
   for (const p of sh.packs) out.push(renderFriend(p));
 
   // Shared folder: automatic two-way sync for people running Google Drive for desktop
@@ -1255,8 +1256,10 @@ function renderFriends() {
     h("div", { class: "share-who" },
       h("div", {}, "Sharing as ", h("strong", {}, sh.name)),
       h("div", { class: "hint", title: sh.folder }, "Folder: ", h("code", {}, sh.folder))),
+    h("button", { class: "btn btn-sm btn-gold", onclick: openInvite }, "Invite friends"),
     h("button", { class: "btn btn-sm", onclick: () => { S.shareSetup = { name: sh.name, browse: null }; render(); } }, "Change"),
     h("button", { class: "btn btn-sm btn-ghost btn-danger", onclick: turnOffSharing }, "Stop sharing")));
+  if (S.invite) out.push(renderInvite());
   if (!sh.available) {
     out.push(h("p", { class: "insp-warn" }, "The shared folder isn't reachable right now (is Google Drive running?). Sounds play from this PC's own copies until it's back."));
   }
@@ -1273,13 +1276,116 @@ async function importPackFile(file) {
   await finishPackImport(api("/api/packs", { method: "POST", body: form }));
 }
 
+const isFolderLink = (url) => /\/folders\//.test(url);
+
+async function useInviteLink(url, btn) {
+  url = url.trim();
+  if (!url) return;
+  if (!isFolderLink(url)) {
+    S.join = null;
+    return importPackLink(url, btn);
+  }
+  S.join = { link: url, name: S.join?.name ?? S.sharing.name, status: "checking" };
+  render();
+  await tryJoin();
+}
+
+// Joining a shared folder waits on things done outside the app (installing Drive, adding
+// the folder to it), so keep checking until they're done.
+async function tryJoin() {
+  const j = S.join;
+  if (!j) return;
+  clearTimeout(j.timer);
+  try {
+    const res = await api("/api/sharing/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link: j.link, name: j.name }) });
+    if (S.join !== j) return;
+    Object.assign(j, { status: res.status, openUrl: res.open_url, downloadUrl: res.download_url, error: null });
+    if (res.status === "joined") {
+      S.sharing = res;
+      S.join = null;
+      await refreshClips();
+      toast(`You're in! Everyone's rules and clips are below.${res.copied ? ` Copied ${res.copied} of your sounds in.` : ""}`, "ok", 6000);
+    } else if (S.tab === "friends") {
+      j.timer = setTimeout(tryJoin, 4000);
+    }
+  } catch (e) {
+    if (S.join !== j) return;
+    Object.assign(j, { status: "error", error: e.message });
+  }
+  if (S.tab === "friends" && !document.activeElement?.closest?.(".join-card")) render();
+}
+
+function renderJoin() {
+  const j = S.join;
+  const name = h("input", { type: "text", maxlength: 24, value: j.name, "aria-label": "Your name", oninput: (e) => { j.name = e.target.value; } });
+  const step = (n, done, active, ...body) => h("li", { class: `${done ? "done" : ""} ${active ? "active" : ""}` }, h("span", { class: "step-n" }, done ? "✓" : n), h("div", {}, ...body));
+  const noDrive = j.status === "no_drive";
+  const notAdded = j.status === "not_added";
+  return h("div", { class: "share-card join-card" },
+    h("div", { class: "share-who" },
+      h("div", {}, h("strong", {}, "This is a shared folder link"), " for people who add sounds (admins). Just want to play the sounds? Ask for the ", h("em", {}, "library link"), " instead; it needs nothing installed."),
+      j.status === "error" ? h("p", { class: "insp-warn" }, j.error) : null,
+      h("ol", { class: "join-steps" },
+        step(1, !noDrive && j.status !== "checking", noDrive, h("strong", {}, "Install Google Drive for desktop"), " and sign in with the Google account the folder was shared with. ",
+          noDrive ? h("a", { class: "btn btn-sm", href: j.downloadUrl, target: "_blank", rel: "noopener" }, "Download Drive") : null),
+        step(2, false, notAdded, h("strong", {}, "Add the folder to your Drive: "), "open it, click the folder name at the top → ", h("strong", {}, "Organize → Add shortcut → My Drive"), ". ",
+          notAdded ? h("a", { class: "btn btn-sm", href: j.openUrl, target: "_blank", rel: "noopener" }, "Open the folder") : null),
+        step(3, false, false, "Your name for friends: ", name)),
+      h("div", { class: "hint" }, j.status === "checking" ? "Checking…" : "Waiting… this joins by itself as soon as the folder shows up on this computer.")),
+    h("button", { class: "btn btn-sm btn-ghost", onclick: () => { clearTimeout(j.timer); S.join = null; render(); } }, "Cancel"));
+}
+
+async function openInvite() {
+  S.invite = { loading: true };
+  render();
+  try {
+    S.invite = await api("/api/sharing/invite");
+  } catch (e) {
+    S.invite = { error: e.message };
+  }
+  render();
+}
+
+function copyText(text, what) {
+  navigator.clipboard.writeText(text).then(() => toast(`Copied ${what}.`, "ok"), () => toast("Couldn't copy; select the text and copy it yourself.", "err"));
+}
+
+function renderInvite() {
+  const inv = S.invite;
+  const close = h("button", { class: "btn btn-sm btn-ghost", onclick: () => { S.invite = null; render(); } }, "Close");
+  if (inv.loading) return h("div", { class: "share-card invite" }, h("div", { class: "share-who" }, "Preparing invite links…"), close);
+  if (inv.error) return h("div", { class: "share-card invite" }, h("p", { class: "insp-warn" }, inv.error), close);
+  const linkRow = (url, what) => h("div", { class: "invite-link" }, h("code", {}, url), h("button", { class: "btn btn-sm", onclick: () => copyText(url, what) }, "Copy"));
+  const message = (url) => `Join our Dota sounds in Rule Forge: open the app → Friends & packs → paste this link → Join.\n${url}`;
+  const reader = inv.library_link
+    ? [linkRow(inv.library_link, "the library link"),
+      inv.library_public
+        ? h("p", { class: "hint ok-note" }, "✓ Anyone with this link can join. Their copy updates by itself when you add sounds.")
+        : h("p", { class: "insp-warn" }, "Only you can open it so far. Do this once: ",
+          h("a", { href: inv.library_link, target: "_blank", rel: "noopener" }, "open it in Drive"), " → ", h("strong", {}, "Share → General access → Anyone with the link (Viewer)"), ". ",
+          h("button", { class: "linkish", onclick: openInvite }, "Check again")),
+      h("button", { class: "btn btn-sm", onclick: () => copyText(message(inv.library_link), "the invite message") }, "Copy invite message")]
+    : [h("p", { class: "hint" }, "Google Drive is still uploading the library. ", h("button", { class: "linkish", onclick: openInvite }, "Check again"), " in a minute.")];
+  return h("div", { class: "share-card invite" },
+    h("div", { class: "share-who" },
+      h("div", {}, h("strong", {}, "Friends who play the sounds"), h("span", { class: "hint" }, " · no install, read-only")),
+      ...reader,
+      h("div", { class: "invite-admin" }, h("strong", {}, "Admins who add sounds"), h("span", { class: "hint" }, " · need Google Drive for desktop")),
+      inv.folder_link
+        ? [h("p", { class: "hint" }, "Share the folder with them in Drive as ", h("strong", {}, "Editor"), ", then send them this link to paste into the app:"),
+          linkRow(inv.folder_link, "the folder link"),
+          h("a", { class: "btn btn-sm", href: inv.folder_link, target: "_blank", rel: "noopener" }, "Open the folder in Drive")]
+        : h("p", { class: "hint" }, "Share the shared folder with them as Editor; they pick it under Set up.")),
+    close);
+}
+
 async function importPackLink(url, btn) {
   if (!url.trim()) return;
   btn.disabled = true;
   btn.textContent = "Downloading…";
   await finishPackImport(api("/api/packs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) }));
   btn.disabled = false;
-  btn.textContent = "Add pack";
+  btn.textContent = "Join";
 }
 
 async function finishPackImport(request) {
@@ -1287,7 +1393,9 @@ async function finishPackImport(request) {
     const res = await request;
     S.sharing = res;
     await refreshClips();
-    toast(`Added ${res.pack.name}. Copy the rules you like, or turn on "Play their sounds too".`, "ok", 6000);
+    toast(res.pack.library
+      ? `Joined ${res.pack.name}! Its sounds play in your games now and update by themselves.`
+      : `Added ${res.pack.name}. Copy the rules you like, or turn on "Play their sounds too".`, "ok", 6000);
   } catch (e) {
     toast(e.message, "err", 8000);
   }

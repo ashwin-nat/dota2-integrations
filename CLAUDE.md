@@ -30,6 +30,10 @@ Sharing with friends (`src/sharing.py`, editor API in `src/config_ui/sharing_rou
 
 Sound packs (`src/packs.py`) are the no-install alternative: `export_pack` zips `pack.json` (rules without webhooks, plus soundboard clips) and the sounds they reference. `import_pack` unpacks into the media folder, renaming clashing sounds and recording `files` (original name to stored name) so a later update overwrites its own files instead of piling up copies. Packs are stored in `packs/<id>.json`, followed as `pack:<id>` in `sharing.json`, and re-downloaded from their `source` link every 30 minutes (`refresh_packs` in `main.py`). `download_url` turns Google Drive and Dropbox share links into direct downloads.
 
+Admins and listeners: `packs.write_library` (run every 30 s by `publish_library` in `main.py` while a shared folder is set) writes `<folder>/Rule Forge library.zip`. It merges everyone's sound rules (lights dropped, duplicates removed) and clips, and builds byte-identical zips from identical contents (fixed zip timestamps, `created` = newest `updated` among people). A copy is only replaced by a newer `created` (or more sounds), so two admins' apps don't overwrite each other, and it is written in place so Drive keeps its file id. Listeners import it as a pack from its link (`library: true` packs are followed on first import). `src/drive.py` finds a Drive folder from its link: `.shortcut-targets-by-id/<id>/<name>` for shared folders, and the `com.google.drivefs.item-id#S` xattr on macOS for your own (also used for invite links). `POST /api/sharing/join` joins from a folder link or reports `no_drive` / `not_added` (the editor polls it); `GET /api/sharing/invite` returns the folder and library links and whether the library link opens without signing in.
+
+Packaged app: `_enter_app_dir` uses Application Support (macOS) or `%APPDATA%\dota2-integrations` (Windows, unless rules.json sits beside the .exe). `--tray` (on by default when frozen) runs the asyncio app in a thread and a pystray icon on the main thread (`src/tray.py`); Quit and the power button both end both. On macOS a clicked Dock icon reopens the editor. `dota_setup.install_gsi_config` writes the GSI cfg into every Dota install found through Steam's libraryfolders.vdf, unless a cfg there already targets this port; it is skipped for dev instances with `GSI_PORT` set. `packs.default_library_link()` (`src/library_link.txt`, written by the Build workflow's `library_link` input, or `GSI_LIBRARY`) is fetched and followed on first run.
+
 Uploads never overwrite a different file (`unique_path`) and are decoded with pygame first (`SoundManager.check`), so a broken file is rejected at upload rather than failing mid-game. A second launch finds the port taken (`PortInUse`), and if the running process is this app it opens that editor and exits. Because a synced folder can lose files, sound files are only checked for existence by the editor's save (`model_validate(..., context={"check_files": True})`), disabled actions included, so a rule can never point at a missing sound; loading never fails on a missing sound, and `ActionExecutor` skips missing files with a warning.
 
 Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto-created on first run) and an optional `rules.json` in the project root.
@@ -41,7 +45,10 @@ src/
 ├── main.py                    # entry point — wires all subsystems, runs asyncio tasks
 ├── media.py                   # resolves "media/<file>" to local media/ or the shared folder
 ├── sharing.py                 # shared-folder settings, publish own rules/clips, read friends, followed rules
-├── packs.py                   # sound pack .zip export/import, import from link, update checks
+├── packs.py                   # sound pack .zip export/import, import from link, update checks, shared library .zip
+├── drive.py                   # find a Google Drive folder on disk from its link; Drive ids for invites
+├── dota_setup.py              # writes Dota's gamestate_integration cfg
+├── tray.py                    # menu bar / tray icon for the packaged app
 ├── ingress/
 │   └── http_server.py         # POST / handler (logs and strips a top-level `note` field if present), GET /state debug dump, /record/save in record mode
 ├── state/
@@ -157,10 +164,10 @@ Ability monitors follow an ability that transforms in place (Centaur's `centaur_
 ## Build & Release
 
 ```bash
-uv run pyinstaller --onefile --paths . --name dota2-integrations \
+uv run pyinstaller --onefile --windowed --paths . --name dota2-integrations --hidden-import pystray._win32 \
   --add-data "src/config_ui/static:src/config_ui/static" src/main.py   # -> dist/dota2-integrations.exe
 ```
 
 The `--add-data` is required: without the editor's static files the server crashes on startup. On startup the app opens the editor (`/ui`) in the default browser; pass `--no-browser` or set `GSI_NO_BROWSER=1` to skip that. The editor's power button (`POST /api/shutdown`) sets the stop event in `main()`, which cancels every task so the port is closed before the process exits.
 
-`.github/workflows/build.yml` (manual) builds Windows (`.exe`) and macOS (`.app` for Apple Silicon and Intel, zipped with `ditto` so the bundle's symlinks and signature survive) from the current code as workflow artifacts. `release.yml` (manual, takes a tag) reuses it and publishes a GitHub release with the binaries plus `rules.example.json` (shipped as `rules.json`: no sounds, lighting disabled, empty actions) and a zip of `.agents/skills`. The Windows exe reads `rules.json`, `lighting_config_*.json`, `logs/` and sound files from the directory it's run in; the macOS .app uses `~/Library/Application Support/dota2-integrations/` (it has no console).
+`.github/workflows/build.yml` (manual) builds Windows (`.exe`) and macOS (`.app` for Apple Silicon and Intel, zipped with `ditto` so the bundle's symlinks and signature survive) from the current code as workflow artifacts. `release.yml` (manual, takes a tag) reuses it and publishes a GitHub release with the binaries plus `rules.example.json` (shipped as `rules.json`: no sounds, lighting disabled, empty actions) and a zip of `.agents/skills`. Both builds are windowed (no console) and keep data in the user's app data folder (see Packaged app above).

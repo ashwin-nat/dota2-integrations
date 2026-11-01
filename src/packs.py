@@ -83,6 +83,117 @@ def export_pack(name: str) -> bytes:
     return buf.getvalue()
 
 
+LIBRARY_NAME = "Rule Forge library.zip"
+_FIXED_TIME = (1980, 1, 1, 0, 0, 0)
+
+
+def _library_contents(folder: Path) -> tuple[dict, list[Path]]:
+    """Everyone's sound rules and soundboard clips in a shared folder, merged."""
+    people = []
+    for path in sorted((folder / "people").glob("*.json"), key=lambda p: p.stem.lower()):
+        try:
+            people.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError) as e:
+            logger.warning(f"Library: skipping {path.name}: {e}")
+    rules: list = []
+    seen_rules: set[str] = set()
+    ids: set[str] = set()
+    clips: list = []
+    seen_clips: set[str] = set()
+    for person in people:
+        for r in person.get("rules", []):
+            # Only sounds: lights are for the owner's room
+            sounds = [a for a in r.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND]
+            key = json.dumps([r.get("monitor"), sorted(a.get("file", "") for a in sounds)], sort_keys=True)
+            if not sounds or key in seen_rules:
+                continue
+            seen_rules.add(key)
+            rule_id, n = str(r.get("id")), 2
+            while rule_id in ids:
+                rule_id, n = f"{r.get('id')}_{n}", n + 1
+            ids.add(rule_id)
+            rules.append({**r, "id": rule_id, "actions": sounds})
+        for c in person.get("soundboard", []):
+            if isinstance(c, dict) and c.get("file") and c["file"] not in seen_clips:
+                seen_clips.add(c["file"])
+                clips.append(c)
+    refs = {a["file"] for r in rules for a in r["actions"]} | seen_clips
+    files = sorted(
+        (folder / "media" / ref.removeprefix("media/") for ref in refs if ref.startswith("media/")),
+        key=lambda p: p.name,
+    )
+    files = [f for f in files if f.is_file()]
+    meta = {
+        "format": FORMAT, "name": folder.name, "library": True,
+        # The newest change by anyone; the same on every admin's computer, so the zip is too
+        "created": max((p.get("updated") or "" for p in people), default=""),
+        "people": [p.get("name") for p in people],
+        "rules": rules, "soundboard": clips,
+    }
+    return meta, files
+
+
+def build_library(folder: Path) -> tuple[bytes, dict]:
+    """A pack of everything in the shared folder, byte-for-byte the same for the same contents."""
+    meta, files = _library_contents(folder)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(zipfile.ZipInfo("pack.json", _FIXED_TIME), json.dumps(meta, indent=2, ensure_ascii=False, sort_keys=True),
+                   compress_type=zipfile.ZIP_DEFLATED)
+        for f in files:
+            z.writestr(zipfile.ZipInfo(f"media/{f.name}", _FIXED_TIME), f.read_bytes(), compress_type=zipfile.ZIP_STORED)
+    return buf.getvalue(), {"created": meta["created"], "sounds": len(files)}
+
+
+def _library_info(data: bytes) -> dict | None:
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        meta = json.loads(z.read("pack.json"))
+        return {"created": meta.get("created") or "", "sounds": sum(n.startswith("media/") for n in z.namelist())}
+    except (zipfile.BadZipFile, KeyError, ValueError):
+        return None
+
+
+def write_library(folder: Path) -> bool:
+    """Refresh <folder>/Rule Forge library.zip, the read-only link for friends without Drive.
+
+    Every admin's app runs this. The zip only depends on the folder's contents, and a copy
+    is only replaced by a newer one (or one with sounds that hadn't synced for its writer),
+    so two admins don't keep overwriting each other. Returns True if it wrote.
+    """
+    if not (folder / "people").is_dir():
+        return False  # Drive isn't running, or the folder went away
+    data, info = build_library(folder)
+    target = folder / LIBRARY_NAME
+    try:
+        current = target.read_bytes()
+    except OSError:
+        current = None
+    if current == data:
+        return False
+    old = _library_info(current) if current else None
+    if old and (old["created"], old["sounds"]) >= (info["created"], info["sounds"]):
+        return False
+    # Written in place, not swapped in: Drive keeps the file's id (and so its link) that way
+    with open(target, "wb") as f:
+        f.write(data)
+    logger.info(f"Updated the shared library ({info['sounds']} sounds)")
+    return True
+
+
+BUILTIN_LINK = Path(__file__).parent / "library_link.txt"
+
+
+def default_library_link() -> str | None:
+    """The library a build was made for (library_link.txt, bundled at build time), or GSI_LIBRARY."""
+    if link := os.environ.get("GSI_LIBRARY", "").strip():
+        return link
+    try:
+        return BUILTIN_LINK.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "pack"
 
@@ -183,6 +294,7 @@ def import_pack(data: bytes, source: str | None = None) -> dict:
         "rules": rules,
         "soundboard": clips,
         "files": files,
+        "library": bool(meta.get("library")),
     }
     PACKS_DIR.mkdir(exist_ok=True)
     _write_atomic(_pack_path(pack_id), json.dumps(record, indent=2, ensure_ascii=False).encode("utf-8"))
@@ -232,6 +344,16 @@ async def download(url: str) -> bytes:
         # Drive answers private files with a sign-in page instead of an error
         raise PackError("That link didn't give a .zip file. In Google Drive, set the file's access to \"Anyone with the link\".")
     return bytes(data)
+
+
+async def check_link(url: str) -> bool:
+    """Whether anyone can download a pack from this link without signing in."""
+    connector = aiohttp.TCPConnector(ssl=ssl.create_default_context(cafile=certifi.where()))
+    async with aiohttp.ClientSession(connector=connector, timeout=aiohttp.ClientTimeout(total=30)) as session:
+        async with session.get(download_url(url)) as resp:
+            if resp.status != 200:
+                return False
+            return (await resp.content.read(2)) == b"PK"
 
 
 async def refresh(pack: dict) -> bool:

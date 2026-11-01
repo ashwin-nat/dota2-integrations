@@ -296,6 +296,21 @@ def publish() -> None:
     _write_atomic(_person_path(folder, _settings.name), json.dumps(data, indent=2, ensure_ascii=False))
 
 
+def warm_cache() -> None:
+    """Read every shared sound once, so Drive for desktop keeps a local copy to play from."""
+    folder = shared_folder()
+    media = folder / "media" if folder else None
+    if not media or not media.is_dir():
+        return
+    for f in media.iterdir():
+        try:
+            with open(f, "rb") as fh:
+                while fh.read(1 << 20):
+                    pass
+        except OSError:
+            pass
+
+
 def publish_safely() -> None:
     """publish(), but a sync folder hiccup only logs instead of failing the caller."""
     try:

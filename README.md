@@ -6,19 +6,21 @@ Receives [Dota 2 GSI](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_T
 
 Grab the latest build from the [Releases page](https://github.com/ashwin-nat/dota2-integrations/releases):
 
-- **Windows:** `dota2-integrations-windows.exe`. Put it in its own folder; `rules.json`, sounds and logs live next to it.
+- **Windows:** `dota2-integrations-windows.exe`
 - **Mac (Apple Silicon, M1 and later):** `dota2-integrations-mac.zip`
 - **Mac (Intel):** `dota2-integrations-mac-intel.zip`
 
-Starting the app opens the rules editor in your browser.
+Starting the app opens the rules editor in your browser. It also sets up Dota 2 to send it game state, by writing `gamestate_integration_rule_forge.cfg` into every Dota install it finds (restart Dota if it was running). The app has no window of its own. It shows a ◆ icon in the menu bar (Mac) or the system tray (Windows); click it to reopen the editor, or choose **Quit**. On a Mac, clicking the app's Dock icon also reopens the editor.
+
+Settings, sounds and logs are kept in `~/Library/Application Support/dota2-integrations/` on a Mac and `%APPDATA%\dota2-integrations\` on Windows. An older Windows setup with `rules.json` next to the .exe keeps using that folder.
+
+**A build for your group.** Run the *Build* workflow from the Actions tab with your library link (see below) in **library_link**. Friends who run that build get the group's sounds on first launch, and they stay up to date, with no setup at all.
 
 **First launch on Mac:** the app isn't signed by Apple, so macOS blocks it the first time. Unzip it, move it to Applications, double-click it, then go to **System Settings → Privacy & Security** and click **Open Anyway**. If macOS says the app "is damaged", run this once in Terminal:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/dota2-integrations.app
 ```
-
-The Mac app keeps its settings, sounds and logs in `~/Library/Application Support/dota2-integrations/`.
 
 ## Requirements
 
@@ -50,21 +52,21 @@ The **Friends & packs** tab shares sounds, soundboard clips and rules. Everyone 
 - **Copy** a rule into yours. If you already have a sound for that trigger, you choose **Replace mine** (only the sound changes; your lights stay) or **Add both**.
 - Turn on **Play their sounds too**. Their sounds then fill in triggers you don't have a sound for. Your own sound always wins, so two sounds never play at once.
 
-Lights, webhooks (they can hold API keys), logs and light passwords always stay on your computer. There are two ways to share.
+Lights, webhooks (they can hold API keys), logs and light passwords always stay on your computer.
 
-**Sound packs (no install).** **Export my pack** downloads one `.zip` with your rules, soundboard clips and the sounds they use.
+**The quick way: admins and listeners.** One or two people (the admins) add and edit the sounds through a shared Google Drive folder. Everyone else just listens, with nothing to install.
+
+- **Listeners:** paste the *library link* an admin sent into the box at the top of **Friends & packs** and press **Join**. The group's sounds play in your games straight away and update by themselves every 30 minutes.
+- **Admins** keep the library current without doing anything: every admin's app writes `Rule Forge library.zip` into the shared folder whenever someone changes their rules or clips. It holds everyone's sound rules and soundboard clips with their sounds. In the editor, **Invite friends** shows both links and checks the library link works. Before listeners can open it, set its sharing to *Anyone with the link* in Drive once.
+- **New admins** need [Google Drive for desktop](https://www.google.com/drive/download/) and the folder shared with them as **Editor**. They paste the folder link from **Invite friends** (or from Drive's share email) into the same box. The app tells them what's left to do: install Drive, then add the folder to My Drive (**Organize → Add shortcut**). It joins by itself once the folder appears on their computer, and then fetches the sounds so the first one doesn't play late.
+
+**Sound packs.** **Export my pack** downloads one `.zip` with your own rules, soundboard clips and the sounds they use.
 - **Sharing yours:** upload the `.zip` to Google Drive in your browser and set its access to *Anyone with the link*. Then send the link.
 - **Adding a friend's:** paste their link into the Friends tab, or drop their `.zip` on it.
 - **Updates:** packs added from a link are checked for updates every 30 minutes. To publish an update, open the file in Drive and use **Manage versions** to upload the new `.zip`, so the link stays the same. Dropbox links and plain https links work too.
 - **Name clashes:** a pack's sound whose name clashes with a different sound you already have is stored under a new name, such as `wow (2).mp3`.
 
-**Shared folder (automatic, both ways).** For friends who run a sync app:
-
-1. Everyone installs [Google Drive for desktop](https://www.google.com/drive/download/).
-2. One person creates a folder (for example *Dota Sounds*) and shares it with the others as **Editor**.
-3. Everyone else opens it under *Shared with me*, right-clicks it, and picks **Organize → Add shortcut** to put it in My Drive, so it syncs to their computer.
-4. Make the folder **Available offline** (right-click it) or set Drive to **Mirror files**, so a sound doesn't have to download the first time it plays mid-game.
-5. In the editor, open **Friends**, enter your name and pick the folder. Google Drive, Dropbox, OneDrive and iCloud folders are listed automatically.
+**Shared folder by hand.** Instead of a folder link, admins can also pick the folder under **Set up**. Google Drive, Dropbox, OneDrive and iCloud folders are listed automatically.
 
 When you join, your sounds are copied into `<folder>/media/`, and from then on everyone's sounds play from there. If a friend already put a *different* sound there with the same name, yours is copied as `name (2).mp3` and your rules are updated to use it. Your rules and clip names are written to `<folder>/people/<your name>.json` every time you save. Nobody else writes that file, so the sync never produces conflicting copies. If you stop sharing, the shared sounds are copied back to your computer, so your rules keep working.
 

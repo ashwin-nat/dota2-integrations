@@ -687,8 +687,22 @@ label.btn { display: inline-flex; align-items: center; }
   border: 1px dashed var(--line-2); border-radius: var(--radius);
   transition: border-color .12s, background .12s;
 }
+.join-steps { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
+.join-steps li { display: flex; gap: 10px; align-items: baseline; }
+.join-steps li.active { color: var(--text); }
+.join-steps li.done { opacity: .7; }
+.join-steps strong { color: var(--text); }
+.join-steps input { width: 160px; margin-left: 4px; }
+.step-n { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-2); display: inline-grid; place-items: center; font-size: 11px; }
+.join-steps li.active .step-n { border-color: var(--gold); color: var(--gold); }
+.invite .share-who { display: grid; gap: 8px; }
+.invite-link { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.invite-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invite-admin { margin-top: 10px; }
+.ok-note { color: #7fc77f; }
 .pack-bar.over { border-color: var(--gold); background: rgba(201,166,90,.08); }
 .pack-bar input { flex: 1; min-width: 0; }
 .friend.pack .friend-avatar { font-size: 20px; }
 .copy-choice { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .follow-note { margin: 8px 0 0; }
+.invite .share-who > .btn { justify-self: start; }

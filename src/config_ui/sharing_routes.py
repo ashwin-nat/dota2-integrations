@@ -9,7 +9,7 @@ from typing import Callable
 
 from aiohttp import web
 
-from src import packs, sharing, shortcuts
+from src import drive, packs, sharing, shortcuts
 from src.media import media_dir
 from src.rules.config import RulesConfig
 
@@ -137,6 +137,55 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             return web.json_response({"ok": False, "error": f"Can't open {path}: {e.strerror or e}"}, status=400)
         return web.json_response(listing)
 
+    async def join(request: web.Request) -> web.Response:
+        """Join the shared folder behind a Drive folder link, once Drive for desktop has it."""
+        body = await request.json()
+        folder_id = drive.folder_id_from_link(str(body.get("link", "")))
+        if not folder_id:
+            return web.json_response({"ok": False, "error": "That isn't a Google Drive folder link"}, status=400)
+        base = {"ok": True, "open_url": drive.folder_link(folder_id), "download_url": drive.DOWNLOAD_URL}
+        try:
+            roots = await asyncio.wait_for(asyncio.to_thread(drive.drive_roots), timeout=60)
+            path = await asyncio.wait_for(asyncio.to_thread(drive.find_folder, folder_id), timeout=60) if roots else None
+        except TimeoutError:
+            return web.json_response({"ok": False, "error": (
+                "Google Drive is taking too long to open. If macOS asked for permission to access it, click Allow and try again."
+            )}, status=504)
+        if not roots:
+            return web.json_response({**base, "status": "no_drive"})
+        if not path:
+            return web.json_response({**base, "status": "not_added"})
+        try:
+            result = await asyncio.to_thread(sharing.configure, str(path), str(body.get("name", "")))
+        except (sharing.SharingError, OSError) as e:
+            return web.json_response({"ok": False, "error": str(e)}, status=400)
+        recompile()
+        # Drive streams files on first use; fetch them now so the first in-game sound isn't late
+        asyncio.get_running_loop().run_in_executor(None, sharing.warm_cache)
+        return web.json_response({**base, "status": "joined", **result, **await asyncio.to_thread(state)})
+
+    async def invite(_: web.Request) -> web.Response:
+        """Links to hand out: the folder for admins, the library .zip for everyone else."""
+        folder = sharing.shared_folder()
+        if not folder:
+            return web.json_response({"ok": False, "error": "Turn on the shared folder first"}, status=400)
+
+        def ids() -> tuple[str | None, str | None]:
+            packs.write_library(folder)
+            lib = folder / packs.LIBRARY_NAME
+            return drive.folder_id_of(folder), drive.item_id(lib) if lib.exists() else None
+
+        folder_id, lib_id = await asyncio.to_thread(ids)
+        out: dict = {"ok": True, "folder_link": drive.folder_link(folder_id) if folder_id else None, "library_link": None, "library_public": False}
+        # Drive gives a new file a temporary local id until it has uploaded it
+        if lib_id and not lib_id.startswith("local"):
+            out["library_link"] = f"https://drive.google.com/file/d/{lib_id}/view?usp=sharing"
+            try:
+                out["library_public"] = await packs.check_link(out["library_link"])
+            except Exception:
+                pass
+        return web.json_response(out)
+
     async def export_pack(_: web.Request) -> web.Response:
         name = sharing.settings().name
         data = await asyncio.to_thread(packs.export_pack, name)
@@ -145,6 +194,7 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
         })
 
     async def import_pack(request: web.Request) -> web.Response:
+        known = {p["id"] for p in packs.list_packs()}
         try:
             if request.content_type == "application/json":
                 url = str((await request.json()).get("url", "")).strip()
@@ -165,9 +215,12 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             return web.json_response({"ok": False, "error": str(e)}, status=400)
         except Exception as e:
             return web.json_response({"ok": False, "error": f"Couldn't import the pack: {e}"}, status=400)
+        if record.get("library") and record["id"] not in known:
+            # A shared library is for playing: its sounds play in your games straight away
+            sharing.set_following(f"{sharing.PACK_PREFIX}{record['id']}", True)
         recompile()
         sharing.publish_safely()
-        return web.json_response({"ok": True, "pack": {"id": record["id"], "name": record["name"]}, **await asyncio.to_thread(state)})
+        return web.json_response({"ok": True, "pack": {"id": record["id"], "name": record["name"], "library": record.get("library", False)}, **await asyncio.to_thread(state)})
 
     async def refresh_pack(request: web.Request) -> web.Response:
         pack = packs.load_pack(request.match_info["id"])
@@ -196,3 +249,5 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
     app.router.add_put("/api/sharing", put_state)
     app.router.add_post("/api/sharing/follow", follow)
     app.router.add_get("/api/sharing/browse", browse)
+    app.router.add_post("/api/sharing/join", join)
+    app.router.add_get("/api/sharing/invite", invite)

@@ -23,3 +23,4 @@ dist/
 *.spec
 !rules.example.json
 recordings/
+src/library_link.txt

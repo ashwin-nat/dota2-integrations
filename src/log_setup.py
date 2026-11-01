@@ -27,7 +27,9 @@ def setup_logging(
 
     root = logging.getLogger()
     root.setLevel(level)
-    root.addHandler(stdout_handler)
+    # A windowed Windows build has no console, so no stdout
+    if sys.stdout is not None:
+        root.addHandler(stdout_handler)
     root.addHandler(file_handler)
 
     # aiohttp logs every request at INFO; GSI posts several times a second
