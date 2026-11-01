@@ -2,6 +2,8 @@
 
 Receives [Dota 2 GSI](https://developer.valvesoftware.com/wiki/Dota_2_Workshop_Tools/GSI) (Game State Integration) payloads and holds the latest snapshot in memory.
 
+**Website:** https://ashwin-nat.github.io/dota2-integrations/ (source in `site/`, deployed by `.github/workflows/pages.yml`).
+
 ## Download (no Python needed)
 
 Grab the latest build from the [Releases page](https://github.com/ashwin-nat/dota2-integrations/releases):
