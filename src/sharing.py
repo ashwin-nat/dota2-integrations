@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from src import packs, shortcuts
 from src.media import LOCAL_MEDIA_DIR, media_ref, set_media_dir, unique_path
-from src.rules.config import ActionType, Rule, RulesConfig
+from src.rules.config import SOUND_TYPE_ACTIONS, ActionType, Rule, RulesConfig, rewrite_sound_refs, sound_refs
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def _referenced_media() -> set[str]:
         if RULES_PATH.exists():
             raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
             for rule in raw["rules"] if isinstance(raw, dict) else raw:
-                refs.update(a["file"] for a in rule.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND and a.get("file"))
+                refs.update(f for a in rule.get("actions", []) for f in sound_refs(a))
         if SOUNDBOARD_PATH.exists():
             refs.update(c["file"] for c in json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8")).get("clips", []) if c.get("file"))
     except (OSError, ValueError, KeyError, TypeError) as e:
@@ -180,8 +180,7 @@ def _rewrite_refs(renamed: dict[str, str]) -> None:
         raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
         for rule in raw["rules"] if isinstance(raw, dict) else raw:
             for action in rule.get("actions", []):
-                if action.get("type") == ActionType.PLAY_SOUND and action.get("file") in renamed:
-                    action["file"] = renamed[action["file"]]
+                rewrite_sound_refs(action, renamed)
         _write_atomic(RULES_PATH, json.dumps(raw, indent=4))
     if SOUNDBOARD_PATH.exists():
         board = json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8"))
@@ -363,7 +362,7 @@ def followed_rules(own_rules: list[Rule]) -> list[Rule]:
     folder = shared_folder()
     taken = {
         _trigger(r.monitor) for r in own_rules
-        if any(a.type == ActionType.PLAY_SOUND and a.enabled for a in r.actions)
+        if any(a.type in SOUND_TYPE_ACTIONS and a.enabled for a in r.actions)
     }
     out: list[Rule] = []
     for key in _settings.following:
@@ -377,7 +376,7 @@ def followed_rules(own_rules: list[Rule]) -> list[Rule]:
         if not data:
             continue
         for raw in data.get("rules", []):
-            sounds = [a for a in raw.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND and a.get("enabled", True)]
+            sounds = [a for a in raw.get("actions", []) if a.get("type") in SOUND_TYPE_ACTIONS and a.get("enabled", True)]
             if not sounds or _trigger(raw.get("monitor")) in taken:
                 continue
             taken.add(_trigger(raw.get("monitor")))

@@ -29,7 +29,7 @@ import certifi
 
 from src.config_ui.files import AUDIO_EXTENSIONS
 from src.media import media_dir, media_ref, resolve, unique_path
-from src.rules.config import ActionType
+from src.rules.config import SOUND_TYPE_ACTIONS, ActionType, rewrite_sound_refs, sound_refs
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def export_pack(name: str) -> bytes:
         rules = raw["rules"] if isinstance(raw, dict) else raw
     rules = _without_webhooks(rules)
     clips = json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8")).get("clips", []) if SOUNDBOARD_PATH.exists() else []
-    refs = {a["file"] for r in rules for a in r["actions"] if a.get("type") == ActionType.PLAY_SOUND}
+    refs = {f for r in rules for a in r["actions"] for f in sound_refs(a)}
     refs |= {c["file"] for c in clips}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -104,8 +104,8 @@ def _library_contents(folder: Path) -> tuple[dict, list[Path]]:
     for person in people:
         for r in person.get("rules", []):
             # Only sounds: lights are for the owner's room
-            sounds = [a for a in r.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND]
-            key = json.dumps([r.get("monitor"), sorted(a.get("file", "") for a in sounds)], sort_keys=True)
+            sounds = [a for a in r.get("actions", []) if a.get("type") in SOUND_TYPE_ACTIONS]
+            key = json.dumps([r.get("monitor"), sorted(f for a in sounds for f in sound_refs(a))], sort_keys=True)
             if not sounds or key in seen_rules:
                 continue
             seen_rules.add(key)
@@ -118,7 +118,7 @@ def _library_contents(folder: Path) -> tuple[dict, list[Path]]:
             if isinstance(c, dict) and c.get("file") and c["file"] not in seen_clips:
                 seen_clips.add(c["file"])
                 clips.append(c)
-    refs = {a["file"] for r in rules for a in r["actions"]} | seen_clips
+    refs = {f for r in rules for a in r["actions"] for f in sound_refs(a)} | seen_clips
     files = sorted(
         (folder / "media" / ref.removeprefix("media/") for ref in refs if ref.startswith("media/")),
         key=lambda p: p.name,
@@ -283,8 +283,7 @@ def import_pack(data: bytes, source: str | None = None) -> dict:
     rules = _without_webhooks(meta.get("rules", []))
     for r in rules:
         for a in r["actions"]:
-            if a.get("type") == ActionType.PLAY_SOUND and a.get("file") in renamed:
-                a["file"] = renamed[a["file"]]
+            rewrite_sound_refs(a, renamed)
     clips = [c for c in meta.get("soundboard", []) if isinstance(c, dict) and c.get("file")]
     for c in clips:
         c["file"] = renamed.get(c["file"], c["file"])

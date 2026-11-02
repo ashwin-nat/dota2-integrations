@@ -118,6 +118,59 @@ AnyAction = Annotated[
     Field(discriminator="type"),
 ]
 
+# Every action that plays sound files. Anything that filters, collects or renames
+# sounds goes through this set and the helpers below, so a new sound action only
+# needs adding here (and to sound_refs/rewrite_sound_refs if its shape differs).
+SOUND_TYPE_ACTIONS = frozenset({ActionType.PLAY_SOUND, ActionType.PLAY_RANDOM_SOUND})
+
+
+def _sound_dicts(action: dict) -> list[dict]:
+    """The dicts of a raw action that carry a `file`: the action itself, or each of its clips."""
+    return [action] + [c for c in action.get("clips", []) if isinstance(c, dict)]
+
+
+def sound_refs(action: dict) -> list[str]:
+    """Sound files a raw (rules.json) action plays; empty for non-sound actions."""
+    if action.get("type") not in SOUND_TYPE_ACTIONS:
+        return []
+    return [d["file"] for d in _sound_dicts(action) if d.get("file")]
+
+
+def rewrite_sound_refs(action: dict, renamed: dict[str, str]) -> None:
+    """Point a raw sound action's files at their new names, in place."""
+    if action.get("type") not in SOUND_TYPE_ACTIONS:
+        return
+    for d in _sound_dicts(action):
+        if d.get("file") in renamed:
+            d["file"] = renamed[d["file"]]
+
+
+def remove_sound_ref(action: dict, file: str) -> bool:
+    """Drop `file` from a raw sound action, in place. True if nothing playable is left (remove the action).
+
+    A random-sound action keeps its other clips; the dropped clip's probability is
+    handed to them in proportion so the total stays 100.
+    """
+    if action.get("type") not in SOUND_TYPE_ACTIONS:
+        return False
+    if action.get("type") == ActionType.PLAY_SOUND:
+        return action.get("file") == file
+    clips = action.get("clips", [])
+    kept = [c for c in clips if c.get("file") != file]
+    if len(kept) == len(clips):
+        return False
+    if kept:
+        total = sum(c["probability"] for c in kept)
+        if total == 0:
+            shares = [100 // len(kept)] * len(kept)
+        else:
+            shares = [100 * c["probability"] // total for c in kept]
+        shares[max(range(len(kept)), key=lambda i: kept[i]["probability"])] += 100 - sum(shares)
+        for c, share in zip(kept, shares):
+            c["probability"] = share
+    action["clips"] = kept
+    return not kept
+
 
 # --- Monitor configs ---
 
