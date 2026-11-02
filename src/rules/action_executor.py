@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qs
 
@@ -12,6 +14,7 @@ from src.rules.bus import EventContext, QueuedAction, RuleEventBus
 from src.rules.config import (
     ActionType,
     AnyAction,
+    PlayRandomSoundAction,
     PlaySoundAction,
     WebhookAction,
 )
@@ -34,6 +37,11 @@ class ActionExecutor:
         self._sound = sound
         self._webhook_last_fired: dict[int, float] = {}
         self._webhook_tasks: set[asyncio.Task[None]] = set()
+        self._handlers: dict[ActionType, Callable[[Any, EventContext], Awaitable[None]]] = {
+            ActionType.PLAY_SOUND:        self._execute_play_sound,
+            ActionType.PLAY_RANDOM_SOUND: self._execute_play_random_sound,
+            ActionType.WEBHOOK:           self._execute_webhook,
+        }
 
     def worker_coroutines(self, bus: RuleEventBus) -> dict[str, Any]:
         """Return one named coroutine per action type queue."""
@@ -51,21 +59,26 @@ class ActionExecutor:
 
     async def _dispatch(self, action: AnyAction, ctx: EventContext) -> None:
         logger.info(f"{ctx} -> {action.type}")
-        if action.type == ActionType.PLAY_SOUND:
-            await self._execute_play_sound(action)  # type: ignore[arg-type]
-        elif action.type == ActionType.WEBHOOK:
-            await self._execute_webhook(action, ctx)  # type: ignore[arg-type]
+        if handler := self._handlers.get(action.type):
+            await handler(action, ctx)
 
-    async def _execute_play_sound(self, action: PlaySoundAction) -> None:
-        path = resolve(action.file)
+    async def _execute_play_sound(self, action: PlaySoundAction, ctx: EventContext) -> None:
+        await self._play(action.file, action.volume)
+
+    async def _play(self, file: str, volume: int) -> None:
+        path = resolve(file)
         if not path.is_file():
             logger.warning(f"Sound file not found, skipping: {path}")
             return
         try:
-            await self._sound.play(str(path), volume=action.volume / 100)
+            await self._sound.play(str(path), volume=volume / 100)
         except Exception as e:
             # A bad file must not kill the sound worker
             logger.warning(f"Could not play {path}: {e}")
+
+    async def _execute_play_random_sound(self, action: PlayRandomSoundAction, ctx: EventContext) -> None:
+        clip = random.choices(action.clips, weights=[c.probability for c in action.clips])[0]
+        await self._play(clip.file, clip.volume)
 
     async def _execute_webhook(self, action: WebhookAction, ctx: EventContext) -> None:
         key = id(action)
