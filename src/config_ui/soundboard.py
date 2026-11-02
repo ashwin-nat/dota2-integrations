@@ -145,19 +145,23 @@ def setup_soundboard(
     routes = web.RouteTableDef()
 
     def retarget_rules(old: str, new: str | None) -> int:
-        """Point rules at a renamed clip, or switch their sound off when it's deleted. Returns actions changed."""
+        """Point rules at a renamed clip, or remove their sound action when it's deleted. Returns actions changed."""
         if not rules_path.exists():
             return 0
         raw = json.loads(rules_path.read_text(encoding="utf-8"))
         changed = 0
         for rule in raw["rules"] if isinstance(raw, dict) else raw:
-            for action in rule.get("actions", []):
-                if action.get("type") == "play_sound" and action.get("file") == old:
-                    if new:
-                        action["file"] = new
-                    else:
-                        action["enabled"] = False
-                    changed += 1
+            hits = [a for a in rule.get("actions", []) if a.get("type") == "play_sound" and a.get("file") == old]
+            if not hits:
+                continue
+            changed += len(hits)
+            if new:
+                for action in hits:
+                    action["file"] = new
+            else:
+                rule["actions"] = [a for a in rule["actions"] if a not in hits]
+                logger.info(f"Removed {len(hits)} sound action(s) playing {old} from rule {rule.get('id')!r}"
+                            + ("" if rule["actions"] else " (the rule now has no actions)"))
         if not changed:
             return 0
         try:
@@ -266,7 +270,7 @@ def setup_soundboard(
     async def delete_clip(request: web.Request) -> web.Response:
         clips = _load()
         clip = find(clips, request.match_info["id"])
-        # Switch off rule sounds first so rules.json never points an enabled action at a missing file
+        # Remove rule sounds first so rules.json never points at a missing file
         rules_changed = retarget_rules(clip.file, None)
         resolve(clip.file).unlink(missing_ok=True)
         _save([c for c in clips if c.id != clip.id])

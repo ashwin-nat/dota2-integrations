@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from src import packs, shortcuts
 from src.media import LOCAL_MEDIA_DIR, media_ref, set_media_dir, unique_path
-from src.rules.config import ActionType, Rule
+from src.rules.config import ActionType, Rule, RulesConfig
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +275,8 @@ def publish() -> None:
     rules: list = []
     if RULES_PATH.exists():
         raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
+        # Never publish rules whose sounds aren't there; friends could not copy them anyway
+        RulesConfig.model_validate(raw)
         rules = raw["rules"] if isinstance(raw, dict) else raw
     # Webhooks can carry API keys and only make sense on the owner's network
     rules = [
@@ -382,7 +384,7 @@ def followed_rules(own_rules: list[Rule]) -> list[Rule]:
             try:
                 out.append(Rule.model_validate({"id": f"{name}/{raw.get('id')}", "monitor": raw.get("monitor"), "actions": sounds}))
             except ValidationError as e:
-                logger.warning(f"Skipping {name}'s rule {raw.get('id')!r}: {e.error_count()} problem(s)")
+                logger.warning(f"Skipping {name}'s rule {raw.get('id')!r}: " + "; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors()))
     return out
 
 

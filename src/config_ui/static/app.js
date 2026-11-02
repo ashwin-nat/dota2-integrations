@@ -1178,12 +1178,20 @@ function ago(iso) {
 }
 
 const soundFiles = (r) => r.actions.filter((a) => a.type === "play_sound").map((a) => a.file).sort().join("|");
+// A sound the shared folder doesn't have: the rule can't be copied
+const brokenRule = (r) => r.actions.some((a) => a.type === "play_sound" && !hasMedia(a.file));
 const hasSound = (r) => r.actions.some((a) => a.type === "play_sound" && a.enabled !== false);
 const haveRule = (rule) => S.config.rules.some((r) => sameMonitor(r.monitor, rule.monitor) && soundFiles(r) === soundFiles(rule));
 // One of your rules already plays a different sound on this trigger
 const clashingRules = (rule) => S.config.rules.filter((r) => sameMonitor(r.monitor, rule.monitor) && hasSound(r) && soundFiles(r) !== soundFiles(rule));
 
 function copyFriendRules(friend, rules, { replace = false } = {}) {
+  // All or nothing: a rule whose sound isn't in your library could never play
+  const missing = [...new Set(rules.flatMap((r) => r.actions.filter((a) => a.type === "play_sound" && !hasMedia(a.file)).map((a) => fileName(a.file))))];
+  if (missing.length) {
+    toast(`Nothing copied: ${friend.name}'s sound${missing.length === 1 ? "" : "s"} ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} in the shared folder. Ask them to re-upload ${missing.length === 1 ? "it" : "them"}.`, "err");
+    return;
+  }
   for (const rule of rules) {
     const copy = structuredClone(rule);
     if (replace) {
@@ -1424,13 +1432,15 @@ const rulesOpen = new Map();
 
 function renderFriend(f) {
   const isPack = f.kind === "pack";
-  const fresh = f.rules.filter((r) => !haveRule(r) && !clashingRules(r).length);
+  const fresh = f.rules.filter((r) => !haveRule(r) && !clashingRules(r).length && !brokenRule(r));
   // What following would actually play: yours win on triggers you already have
   const playable = f.rules.filter((r) => hasSound(r) && !S.config.rules.some((m) => sameMonitor(m.monitor, r.monitor) && hasSound(m)));
   const withSound = f.rules.filter(hasSound).length;
   const row = (r) => {
     const d = describeTrigger(r.monitor);
     const clash = !haveRule(r) && clashingRules(r).length > 0;
+    const broken = brokenRule(r);
+    const why = broken ? "Its sound is missing from the shared folder" : null;
     return h("div", { class: "rule-row friend-rule" },
       h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
       h("span", { class: "trig" }, h("div", { class: "t" }, d.title),
@@ -1445,9 +1455,9 @@ function renderFriend(f) {
       })),
       haveRule(r) ? h("span", { class: "have" }, "✓ In yours")
         : clash ? h("span", { class: "copy-choice" },
-          h("button", { class: "btn btn-sm", title: "Use their sound instead of yours (your lights stay)", onclick: () => copyFriendRules(f, [r], { replace: true }) }, "Replace mine"),
-          h("button", { class: "btn btn-sm btn-ghost", title: "Keep yours and add theirs; both play", onclick: () => copyFriendRules(f, [r]) }, "Add both"))
-        : h("button", { class: "btn btn-sm", onclick: () => copyFriendRules(f, [r]) }, "Copy"));
+          h("button", { class: "btn btn-sm", disabled: broken, title: why || "Use their sound instead of yours (your lights stay)", onclick: () => copyFriendRules(f, [r], { replace: true }) }, "Replace mine"),
+          h("button", { class: "btn btn-sm btn-ghost", disabled: broken, title: why || "Keep yours and add theirs; both play", onclick: () => copyFriendRules(f, [r]) }, "Add both"))
+        : h("button", { class: "btn btn-sm", disabled: broken, title: why, onclick: () => copyFriendRules(f, [r]) }, "Copy"));
   };
   const follow = h("label", { class: "toggle", title: "Their sounds play on this PC for triggers you don't have a sound for (lights stay yours)" },
     h("input", { type: "checkbox", checked: f.following, onchange: (e) => setFollow(f, e.target.checked) }),

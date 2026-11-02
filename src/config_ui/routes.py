@@ -53,7 +53,7 @@ def setup_config_ui(
         except Exception:
             return web.json_response({"ok": False, "errors": [{"loc": [], "msg": "Invalid JSON"}]}, status=400)
         try:
-            config = RulesConfig.model_validate(data, context={"check_files": True})
+            config = RulesConfig.model_validate(data)
         except ValidationError as e:
             errors = [{"loc": list(err["loc"]), "msg": err["msg"].removeprefix("Value error, ")} for err in e.errors()]
             return web.json_response({"ok": False, "errors": errors}, status=422)
