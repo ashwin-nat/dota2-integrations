@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from src import packs, shortcuts
 from src.media import LOCAL_MEDIA_DIR, media_ref, set_media_dir, unique_path
-from src.rules.config import SOUND_TYPE_ACTIONS, ActionType, Rule, RulesConfig, rewrite_sound_refs, sound_refs
+from src.rules.config import SOUND_TYPE_ACTIONS, ActionType, Rule, RulesConfig, sound_refs
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,8 @@ def _rewrite_refs(renamed: dict[str, str]) -> None:
         raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
         for rule in raw["rules"] if isinstance(raw, dict) else raw:
             for action in rule.get("actions", []):
-                rewrite_sound_refs(action, renamed)
+                if action.get("type") == ActionType.PLAY_SOUND and action.get("file") in renamed:
+                    action["file"] = renamed[action["file"]]
         _write_atomic(RULES_PATH, json.dumps(raw, indent=4))
     if SOUNDBOARD_PATH.exists():
         board = json.loads(SOUNDBOARD_PATH.read_text(encoding="utf-8"))

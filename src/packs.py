@@ -29,7 +29,7 @@ import certifi
 
 from src.config_ui.files import AUDIO_EXTENSIONS
 from src.media import media_dir, media_ref, resolve, unique_path
-from src.rules.config import SOUND_TYPE_ACTIONS, ActionType, rewrite_sound_refs, sound_refs
+from src.rules.config import SOUND_TYPE_ACTIONS, ActionType, sound_refs
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +283,8 @@ def import_pack(data: bytes, source: str | None = None) -> dict:
     rules = _without_webhooks(meta.get("rules", []))
     for r in rules:
         for a in r["actions"]:
-            rewrite_sound_refs(a, renamed)
+            if a.get("type") == ActionType.PLAY_SOUND and a.get("file") in renamed:
+                a["file"] = renamed[a["file"]]
     clips = [c for c in meta.get("soundboard", []) if isinstance(c, dict) and c.get("file")]
     for c in clips:
         c["file"] = renamed.get(c["file"], c["file"])

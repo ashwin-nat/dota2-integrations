@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 from src import sharing
 from src.config_ui.files import safe_filename
 from src.media import LOCAL_MEDIA_DIR, media_dir, media_ref, resolve
-from src.rules.config import RulesConfig, remove_sound_ref, rewrite_sound_refs, sound_refs
+from src.rules.config import RulesConfig
 from src.sound import SoundManager
 
 logger = logging.getLogger(__name__)
@@ -151,18 +151,16 @@ def setup_soundboard(
         raw = json.loads(rules_path.read_text(encoding="utf-8"))
         changed = 0
         for rule in raw["rules"] if isinstance(raw, dict) else raw:
-            hits = [a for a in rule.get("actions", []) if old in sound_refs(a)]
+            hits = [a for a in rule.get("actions", []) if a.get("type") == "play_sound" and a.get("file") == old]
             if not hits:
                 continue
             changed += len(hits)
             if new:
                 for action in hits:
-                    rewrite_sound_refs(action, {old: new})
+                    action["file"] = new
             else:
-                # remove_sound_ref trims a random-sound action's clips and says when none are left
-                emptied = [a for a in hits if remove_sound_ref(a, old)]
-                rule["actions"] = [a for a in rule["actions"] if a not in emptied]
-                logger.info(f"Removed {old} from {len(hits)} sound action(s) in rule {rule.get('id')!r}"
+                rule["actions"] = [a for a in rule["actions"] if a not in hits]
+                logger.info(f"Removed {len(hits)} sound action(s) playing {old} from rule {rule.get('id')!r}"
                             + ("" if rule["actions"] else " (the rule now has no actions)"))
         if not changed:
             return 0
