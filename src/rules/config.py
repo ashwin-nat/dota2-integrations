@@ -57,13 +57,6 @@ class PlaySoundAction(BaseAction):
     file: str
     volume: int = Field(ge=0, le=100, default=100)
 
-    @field_validator("file")
-    @classmethod
-    def file_must_exist(cls, v: str) -> str:
-        if not Path(v).is_file():
-            raise ValueError(f"sound file not found: {v!r}")
-        return v
-
 
 class LightAction(BaseAction):
     type: Literal[ActionType.LIGHT]
@@ -181,6 +174,14 @@ class Rule(BaseModel):
     id: str
     monitor: AnyMonitor
     actions: list[AnyAction]
+
+    # Checked here rather than on the action so the error can name the rule
+    @model_validator(mode="after")
+    def sound_files_must_exist(self) -> Rule:
+        for action in self.actions:
+            if isinstance(action, PlaySoundAction) and not Path(action.file).is_file():
+                raise ValueError(f"Rule {self.id!r}: sound file not found: {action.file!r}")
+        return self
 
 
 # --- Top-level config ---

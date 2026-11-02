@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 import aiofiles
+from pydantic import ValidationError
 
 RULES_PATH = Path("rules.json")
 
@@ -43,7 +44,13 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
 async def main(record: bool = False) -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
-    rules_config = RulesConfig.load(RULES_PATH)
+    try:
+        rules_config = RulesConfig.load(RULES_PATH)
+    except ValidationError as e:
+        for err in e.errors():
+            logger.error(f"rules.json: {err['msg'].removeprefix('Value error, ')}")
+        logger.error("Fix or remove those rules in rules.json, then start again")
+        raise SystemExit(1)
     lighting = load_lighting_controller(rules_config.lighting.vendor, enabled=rules_config.lighting.enabled)
     await lighting.setup()
 
