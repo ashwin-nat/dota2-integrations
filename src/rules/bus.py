@@ -93,7 +93,9 @@ class RuleEventBus:
                 # Map rules have no priority (config-enforced) and sit at the baseline.
                 self._arbiter.set(action.priority or MAP_PRIORITY, (action.r, action.g, action.b))
             else:
-                self._queues[action.type].put_nowait(QueuedAction(action=action, ctx=ctx))
+                # Random sounds share the sound queue so they stay ordered with plain sounds
+                key = ActionType.PLAY_SOUND if action.type == ActionType.PLAY_RANDOM_SOUND else action.type
+                self._queues[key].put_nowait(QueuedAction(action=action, ctx=ctx))
 
     def retract(self, event_key: str) -> None:
         """Withdraw the light requests set by this event's rules (the state they signalled has ended)."""

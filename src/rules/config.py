@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class ActionType(StrEnum):
     PLAY_SOUND  = "play_sound"
+    PLAY_RANDOM_SOUND = "play_random_sound"
     LIGHT       = "light"
     WEBHOOK     = "webhook"
 
@@ -58,6 +59,24 @@ class PlaySoundAction(BaseAction):
     volume: int = Field(ge=0, le=100, default=100)
 
 
+class RandomSoundClip(BaseModel):
+    file: str
+    probability: int = Field(ge=0, le=100)
+    volume: int = Field(ge=0, le=100, default=100)
+
+
+class PlayRandomSoundAction(BaseAction):
+    type: Literal[ActionType.PLAY_RANDOM_SOUND]
+    clips: list[RandomSoundClip] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def probabilities_must_sum_to_100(self) -> PlayRandomSoundAction:
+        total = sum(c.probability for c in self.clips)
+        if total != 100:
+            raise ValueError(f"clip probabilities must sum to 100, got {total}")
+        return self
+
+
 class LightAction(BaseAction):
     type: Literal[ActionType.LIGHT]
     r: int = Field(ge=0, le=255)
@@ -93,7 +112,7 @@ class WebhookAction(BaseAction):
 
 
 AnyAction = Annotated[
-    Union[PlaySoundAction, LightAction, WebhookAction],
+    Union[PlaySoundAction, PlayRandomSoundAction, LightAction, WebhookAction],
     Field(discriminator="type"),
 ]
 
@@ -181,6 +200,10 @@ class Rule(BaseModel):
         for action in self.actions:
             if isinstance(action, PlaySoundAction) and not Path(action.file).is_file():
                 raise ValueError(f"Rule {self.id!r}: sound file not found: {action.file!r}")
+            if isinstance(action, PlayRandomSoundAction):
+                for clip in action.clips:
+                    if not Path(clip.file).is_file():
+                        raise ValueError(f"Rule {self.id!r}: sound file not found: {clip.file!r}")
         return self
 
 
