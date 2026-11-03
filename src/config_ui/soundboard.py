@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 from src import sharing
 from src.config_ui.files import safe_filename
 from src.media import LOCAL_MEDIA_DIR, media_dir, media_ref, resolve
-from src.rules.config import RulesConfig
+from src.rules.config import RulesConfig, sound_refs
 from src.sound import SoundManager
 
 logger = logging.getLogger(__name__)
@@ -151,13 +151,15 @@ def setup_soundboard(
         raw = json.loads(rules_path.read_text(encoding="utf-8"))
         changed = 0
         for rule in raw["rules"] if isinstance(raw, dict) else raw:
-            hits = [a for a in rule.get("actions", []) if a.get("type") == "play_sound" and a.get("file") == old]
+            hits = [a for a in rule.get("actions", []) if old in sound_refs(a)]
             if not hits:
                 continue
             changed += len(hits)
             if new:
                 for action in hits:
-                    action["file"] = new
+                    for clip in action["clips"]:
+                        if clip.get("file") == old:
+                            clip["file"] = new
             else:
                 rule["actions"] = [a for a in rule["actions"] if a not in hits]
                 logger.info(f"Removed {len(hits)} sound action(s) playing {old} from rule {rule.get('id')!r}"

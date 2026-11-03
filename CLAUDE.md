@@ -124,8 +124,7 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 
 | `type`         | Fields                  | Notes                                      |
 |----------------|-------------------------|--------------------------------------------|
-| `play_sound`   | `file: str`             |                                            |
-| `play_random_sound` | `clips: [{file, probability, volume}]` | Integer probabilities must sum to 100; one clip picked by weight, shares the sound queue |
+| `play_sound`   | `clips: [{file, probability, volume}]` | Integer probabilities must sum to 100; one clip is picked by weight (a plain sound is one clip at 100) |
 | `light`        | `r`, `g`, `b` (0–255)  |                                            |
 | `reset_light`  | _(none)_                | Restores day/night colour from `map_colours`; forbidden on map monitors |
 

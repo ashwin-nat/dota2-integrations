@@ -14,7 +14,7 @@ description: Add, edit, remove, or debug rules in rules.json for the Soundbo app
   "id": "bkb_used",
   "monitor": { "type": "item", "target": "item_black_king_bar", "event": "COOLDOWN_STARTED" },
   "actions": [
-    { "type": "play_sound", "file": "media/piles.mp3", "volume": 25 },
+    { "type": "play_sound", "clips": [{ "file": "media/yeahboi.mp3", "probability": 100, "volume": 25 }] },
     { "type": "light", "r": 200, "g": 0, "b": 0, "priority": 3 }
   ]
 }
@@ -44,7 +44,7 @@ Every action has `enabled` (default `true`). Use it to switch an action off with
      2. If the exact key is there, use it.
      3. If not, don't guess. Ask the user to start the app, open demo mode with that hero **as their own hero** (GSI only reports the player's hero, not allies or enemies), wait for the match to load, then come back. Then grep the log again for the exact key.
 3. **Pick the actions.** The field-by-field details are in `config.py`. Notes per action:
-   - `play_sound`: `file` must exist on disk, relative to the project root, when the action is enabled; the app refuses to start otherwise. A disabled action may name a clip that isn't there yet (the editor at `/ui` lists these under Sounds → Wanted). List `media/` and suggest existing files before inventing a path. `volume` is per action (0-100) and is scaled by the global `sound.volume`.
+   - `play_sound`: `clips` is a list of `{file, probability, volume}`; one is picked at random by `probability` (ints that must sum to 100, so a single clip is `100`). Each `file` must exist on disk, relative to the project root; the app refuses to start otherwise. List `media/` and suggest existing files before inventing a path. `volume` is per clip (0-100) and is scaled by the global `sound.volume`.
    - `light`: see the priority rules below.
    - `webhook`: `url` must be http(s). If you set `api_key`, also set `auth_type` (`bearer` / `header` / `query`). `cooldown` is in seconds and stops repeated calls.
 4. **Pick an `id`**: snake_case, unique, describing the trigger (e.g. `blink_used`, `hero_killed`).
@@ -62,7 +62,7 @@ Read this before adding any `light` action.
   - `ITEM_LOST`: until the item comes back
   - `CHARGED` / `OVERCHARGED`: while Midas has that many charges
   - `HERO_KILLED`: while dead; `HERO_RESPAWNED`: while alive, i.e. most of the time
-  
+
   When a rule's timing would keep a colour on for a long time (ITEM_ACQUIRED, COOLDOWN_READY, HERO_RESPAWNED), point this out before adding it. A sound-only rule is often what the user actually wants.
 - `PAUSED` / `UNPAUSED` are map events, so a light on them replaces the baseline until the next day/night change. Warn the user about that.
 

@@ -14,7 +14,6 @@ from src.rules.bus import EventContext, QueuedAction, RuleEventBus
 from src.rules.config import (
     ActionType,
     AnyAction,
-    PlayRandomSoundAction,
     PlaySoundAction,
     WebhookAction,
 )
@@ -39,7 +38,6 @@ class ActionExecutor:
         self._webhook_tasks: set[asyncio.Task[None]] = set()
         self._handlers: dict[ActionType, Callable[[Any, EventContext], Awaitable[None]]] = {
             ActionType.PLAY_SOUND:        self._execute_play_sound,
-            ActionType.PLAY_RANDOM_SOUND: self._execute_play_random_sound,
             ActionType.WEBHOOK:           self._execute_webhook,
         }
 
@@ -63,7 +61,8 @@ class ActionExecutor:
             await handler(action, ctx)
 
     async def _execute_play_sound(self, action: PlaySoundAction, ctx: EventContext) -> None:
-        await self._play(action.file, action.volume)
+        clip = random.choices(action.clips, weights=[c.probability for c in action.clips])[0]
+        await self._play(clip.file, clip.volume)
 
     async def _play(self, file: str, volume: int) -> None:
         path = resolve(file)
@@ -75,10 +74,6 @@ class ActionExecutor:
         except Exception as e:
             # A bad file must not kill the sound worker
             logger.warning(f"Could not play {path}: {e}")
-
-    async def _execute_play_random_sound(self, action: PlayRandomSoundAction, ctx: EventContext) -> None:
-        clip = random.choices(action.clips, weights=[c.probability for c in action.clips])[0]
-        await self._play(clip.file, clip.volume)
 
     async def _execute_webhook(self, action: WebhookAction, ctx: EventContext) -> None:
         key = id(action)

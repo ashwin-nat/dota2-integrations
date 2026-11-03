@@ -171,6 +171,8 @@ const stripExt = (name) => name.replace(/\.[^.]+$/, "");
 const fileName = (file) => stripExt(file.replace(/^media\//, ""));
 const mediaLabel = (m) => stripExt(m.name);
 const hasMedia = (file) => S.media.some((m) => m.file === file);
+// A play_sound action holds weighted clips; the editor only offers a single clip at 100% for now
+const clipOf = (a) => a.clips[0];
 
 function describeTrigger(m) {
   const ev = (list) => list.find((e) => e.event === m.event)?.label || m.event;
@@ -215,7 +217,7 @@ function renderStatus(text, cls) {
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function actionText(a) {
-  if (a.type === "play_sound") return `play ${a.file || "(no sound)"}${a.volume != null ? ` at ${a.volume}%` : ""}`;
+  if (a.type === "play_sound") return `play ${clipOf(a).file || "(no sound)"}${clipOf(a).volume != null ? ` at ${clipOf(a).volume}%` : ""}`;
   if (a.type === "light") return `light rgb(${a.r}, ${a.g}, ${a.b})`;
   if (a.type === "reset_light") return "reset light";
   return a.type;
@@ -453,11 +455,11 @@ function visibleRules() {
   const q = S.ruleQuery.trim().toLowerCase();
   const rules = S.config.rules.filter((r) => {
     if (S.ruleKind && ruleKind(r.monitor) !== S.ruleKind) return false;
-    if (S.ruleAction === "missing" && !r.actions.some((a) => a.type === "play_sound" && !hasMedia(a.file))) return false;
+    if (S.ruleAction === "missing" && !r.actions.some((a) => a.type === "play_sound" && !hasMedia(clipOf(a).file))) return false;
     if (S.ruleAction && S.ruleAction !== "missing" && !r.actions.some((a) => a.type === S.ruleAction)) return false;
     if (!q) return true;
     const d = describeTrigger(r.monitor);
-    const text = [r.id, d.title, d.sub, ...r.actions.map((a) => (a.type === "play_sound" ? fileName(a.file) : a.url || ""))];
+    const text = [r.id, d.title, d.sub, ...r.actions.map((a) => (a.type === "play_sound" ? fileName(clipOf(a).file) : a.url || ""))];
     return text.some((t) => t && t.toLowerCase().includes(q));
   });
   const title = (r) => describeTrigger(r.monitor).title.toLowerCase();
@@ -496,9 +498,9 @@ function renderRules() {
     const acts = r.actions.map((a) => {
       const off = a.enabled === false ? "off" : "";
       if (a.type === "play_sound") {
-        const ok = hasMedia(a.file);
-        return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: a.file },
-          ok ? playButton(a.file, () => a.volume) : "♪ ", fileName(a.file), ` · ${a.volume}%`);
+        const ok = hasMedia(clipOf(a).file);
+        return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: clipOf(a).file },
+          ok ? playButton(clipOf(a).file, () => clipOf(a).volume) : "♪ ", fileName(clipOf(a).file), ` · ${clipOf(a).volume}%`);
       }
       if (a.type === "light") return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline");
       return h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook");
@@ -654,7 +656,7 @@ function renderEvents() {
 
 function renderSounds() {
   const usage = new Map();
-  for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound") usage.set(a.file, (usage.get(a.file) || 0) + 1);
+  for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound") usage.set(clipOf(a).file, (usage.get(clipOf(a).file) || 0) + 1);
   const input = h("input", { type: "file", accept: ".mp3,.wav,.ogg,audio/*", multiple: true, id: "upload-input" });
   input.addEventListener("change", async () => { for (const f of input.files) await uploadFile(f); render(); });
   const zone = h("div", { class: "dropzone" }, "Drop .mp3 / .wav / .ogg clips here, or ", h("label", { for: "upload-input" }, "browse"), input);
@@ -674,7 +676,7 @@ function renderSounds() {
         // Keep the expected name but the dropped file's real extension
         const path = await uploadFile(file, fileName(f) + file.name.slice(file.name.lastIndexOf(".")));
         if (!path) return;
-        for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound" && a.file === f) Object.assign(a, { file: path, enabled: true });
+        for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound" && clipOf(a).file === f) { clipOf(a).file = path; a.enabled = true; }
         markDirty();
         render();
       });
@@ -716,15 +718,15 @@ async function refreshClips() {
   S.media = media;
 }
 
-const ruleUses = (file) => S.config.rules.filter((r) => r.actions.some((a) => a.type === "play_sound" && a.file === file)).length;
+const ruleUses = (file) => S.config.rules.filter((r) => r.actions.some((a) => a.type === "play_sound" && clipOf(a).file === file)).length;
 
 // The server already rewrote rules.json for a renamed (to) or deleted (to = null) clip.
 // Mirror that in the editor's copy and its saved snapshot so unsaved edits stay intact.
 function applyClipFileChange(from, to) {
   const fix = (cfg) => {
     for (const r of cfg.rules) for (const a of r.actions) {
-      if (a.type !== "play_sound" || a.file !== from) continue;
-      if (to) a.file = to; else a.enabled = false;
+      if (a.type !== "play_sound" || clipOf(a).file !== from) continue;
+      if (to) clipOf(a).file = to; else a.enabled = false;
     }
   };
   fix(S.config);
@@ -1177,9 +1179,9 @@ function ago(iso) {
   return `${Math.round(s / 86400)} days ago`;
 }
 
-const soundFiles = (r) => r.actions.filter((a) => a.type === "play_sound").map((a) => a.file).sort().join("|");
+const soundFiles = (r) => r.actions.filter((a) => a.type === "play_sound").map((a) => clipOf(a).file).sort().join("|");
 // A sound the shared folder doesn't have: the rule can't be copied
-const brokenRule = (r) => r.actions.some((a) => a.type === "play_sound" && !hasMedia(a.file));
+const brokenRule = (r) => r.actions.some((a) => a.type === "play_sound" && !hasMedia(clipOf(a).file));
 const hasSound = (r) => r.actions.some((a) => a.type === "play_sound" && a.enabled !== false);
 const haveRule = (rule) => S.config.rules.some((r) => sameMonitor(r.monitor, rule.monitor) && soundFiles(r) === soundFiles(rule));
 // One of your rules already plays a different sound on this trigger
@@ -1187,7 +1189,7 @@ const clashingRules = (rule) => S.config.rules.filter((r) => sameMonitor(r.monit
 
 function copyFriendRules(friend, rules, { replace = false } = {}) {
   // All or nothing: a rule whose sound isn't in your library could never play
-  const missing = [...new Set(rules.flatMap((r) => r.actions.filter((a) => a.type === "play_sound" && !hasMedia(a.file)).map((a) => fileName(a.file))))];
+  const missing = [...new Set(rules.flatMap((r) => r.actions.filter((a) => a.type === "play_sound" && !hasMedia(clipOf(a).file)).map((a) => fileName(clipOf(a).file))))];
   if (missing.length) {
     toast(`Nothing copied: ${friend.name}'s sound${missing.length === 1 ? "" : "s"} ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} in the shared folder. Ask them to re-upload ${missing.length === 1 ? "it" : "them"}.`, "err");
     return;
@@ -1444,12 +1446,12 @@ function renderFriend(f) {
     return h("div", { class: "rule-row friend-rule" },
       h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
       h("span", { class: "trig" }, h("div", { class: "t" }, d.title),
-        h("div", { class: "s" }, clash ? `You already have: ${clashingRules(r).flatMap((m) => m.actions.filter((a) => a.type === "play_sound").map((a) => fileName(a.file))).join(", ")}` : d.sub)),
+        h("div", { class: "s" }, clash ? `You already have: ${clashingRules(r).flatMap((m) => m.actions.filter((a) => a.type === "play_sound").map((a) => fileName(clipOf(a).file))).join(", ")}` : d.sub)),
       h("span", { class: "acts" }, r.actions.map((a) => {
         const off = a.enabled === false ? "off" : "";
         if (a.type === "play_sound") {
-          return h("span", { class: `chip ${off} ${hasMedia(a.file) ? "" : "missing"}`, title: a.file },
-            hasMedia(a.file) ? playButton(a.file, () => a.volume) : null, fileName(a.file), ` · ${a.volume}%`);
+          return h("span", { class: `chip ${off} ${hasMedia(clipOf(a).file) ? "" : "missing"}`, title: clipOf(a).file },
+            hasMedia(clipOf(a).file) ? playButton(clipOf(a).file, () => clipOf(a).volume) : null, fileName(clipOf(a).file), ` · ${clipOf(a).volume}%`);
         }
         return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), "light");
       })),
@@ -1663,7 +1665,7 @@ function renderEventBody(ev) {
     h("p", { class: "event-desc" }, ev.desc),
     actions.length ? actions.map(({ rule, action }) => renderAction(rule, action, monitor, changed)) : h("p", { class: "hint" }, "Nothing happens yet. Add a sound or a light:"),
     h("div", { class: "add-row" },
-      h("button", { class: "btn btn-sm", disabled: !firstSound, onclick: () => add({ type: "play_sound", enabled: true, file: firstSound, volume: 50 }) }, "+ Sound"),
+      h("button", { class: "btn btn-sm", disabled: !firstSound, onclick: () => add({ type: "play_sound", enabled: true, clips: [{ file: firstSound, probability: 100, volume: 50 }] }) }, "+ Sound"),
       h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, "+ Light"),
       h("button", { class: "btn btn-sm btn-ghost", onclick: () => add({ type: "webhook", enabled: true, url: "https://", api_key: null, auth_type: null, timeout: 2, cooldown: 0 }) }, "+ Webhook")),
   );
@@ -1729,26 +1731,26 @@ function renderAction(rule, a, monitor, changed) {
   const cls = `action ${a.type === "play_sound" ? "sound" : a.type} ${a.enabled === false ? "disabled" : ""}`;
 
   if (a.type === "play_sound") {
-    const known = hasMedia(a.file);
-    const current = S.media.find((m) => m.file === a.file);
+    const known = hasMedia(clipOf(a).file);
+    const current = S.media.find((m) => m.file === clipOf(a).file);
     const sel = h("button", { class: `sound-pick ${known ? "" : "missing"}`, type: "button", title: "Choose a sound", "aria-label": "Choose sound",
-      onclick: () => openSoundPicker(sel, a.file, (file) => { a.file = file; changed(); }) },
-      h("span", { class: "sb-emoji" }, known ? clipEmoji(a.file) : "⚠"),
-      h("span", { class: "sb-name" }, known ? mediaLabel(current) : `${fileName(a.file)} (missing)`),
+      onclick: () => openSoundPicker(sel, clipOf(a).file, (file) => { clipOf(a).file = file; changed(); }) },
+      h("span", { class: "sb-emoji" }, known ? clipEmoji(clipOf(a).file) : "⚠"),
+      h("span", { class: "sb-name" }, known ? mediaLabel(current) : `${fileName(clipOf(a).file)} (missing)`),
       h("span", { class: "sound-pick-caret" }, "▾"));
-    const out = h("output", {}, `${a.volume}%`);
-    const vol = h("input", { type: "range", min: 0, max: 100, value: a.volume, "aria-label": "Volume",
-      oninput: (e) => { a.volume = +e.target.value; out.value = `${a.volume}%`; markDirty(); } });
+    const out = h("output", {}, `${clipOf(a).volume}%`);
+    const vol = h("input", { type: "range", min: 0, max: 100, value: clipOf(a).volume, "aria-label": "Volume",
+      oninput: (e) => { clipOf(a).volume = +e.target.value; out.value = `${clipOf(a).volume}%`; markDirty(); } });
     const pcBtn = h("button", { class: "btn btn-sm btn-ghost", title: "Play it through the app, like in-game", disabled: !known,
-      onclick: () => api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: a.file, volume: a.volume }) }).catch((e) => toast(e.message, "err")) }, "🔊 Test");
+      onclick: () => api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: clipOf(a).file, volume: clipOf(a).volume }) }).catch((e) => toast(e.message, "err")) }, "🔊 Test");
     const card = h("div", { class: cls },
       h("div", { class: "action-head" }, h("span", { class: "kind" }, "♪ Play sound"), pcBtn, enabled, del),
-      h("div", { class: "field" }, known ? playButton(a.file, () => a.volume) : h("span", { class: "play missing" }, "!"), sel),
+      h("div", { class: "field" }, known ? playButton(clipOf(a).file, () => clipOf(a).volume) : h("span", { class: "play missing" }, "!"), sel),
       h("div", { class: "field" }, h("span", { class: "lbl" }, "Volume"), vol, out),
       known ? null : h("div", { class: "missing-note" }, "This file isn't in media/ yet. Drop a clip onto this card to add it."));
     makeDropTarget(card, async ([file]) => {
       const path = await uploadFile(file);
-      if (path) { a.file = path; a.enabled = true; changed(); }
+      if (path) { clipOf(a).file = path; a.enabled = true; changed(); }
     });
     return card;
   }

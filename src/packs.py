@@ -29,7 +29,7 @@ import certifi
 
 from src.config_ui.files import AUDIO_EXTENSIONS
 from src.media import media_dir, media_ref, resolve, unique_path
-from src.rules.config import SOUND_TYPE_ACTIONS, ActionType, sound_refs
+from src.rules.config import ActionType, sound_refs
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def _library_contents(folder: Path) -> tuple[dict, list[Path]]:
     for person in people:
         for r in person.get("rules", []):
             # Only sounds: lights are for the owner's room
-            sounds = [a for a in r.get("actions", []) if a.get("type") in SOUND_TYPE_ACTIONS]
+            sounds = [a for a in r.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND]
             key = json.dumps([r.get("monitor"), sorted(f for a in sounds for f in sound_refs(a))], sort_keys=True)
             if not sounds or key in seen_rules:
                 continue
@@ -283,8 +283,9 @@ def import_pack(data: bytes, source: str | None = None) -> dict:
     rules = _without_webhooks(meta.get("rules", []))
     for r in rules:
         for a in r["actions"]:
-            if a.get("type") == ActionType.PLAY_SOUND and a.get("file") in renamed:
-                a["file"] = renamed[a["file"]]
+            if a.get("type") == ActionType.PLAY_SOUND:
+                for c in a.get("clips", []):
+                    c["file"] = renamed.get(c.get("file"), c.get("file"))
     clips = [c for c in meta.get("soundboard", []) if isinstance(c, dict) and c.get("file")]
     for c in clips:
         c["file"] = renamed.get(c["file"], c["file"])

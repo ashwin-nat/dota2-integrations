@@ -15,7 +15,6 @@ from src.media import resolve
 
 class ActionType(StrEnum):
     PLAY_SOUND  = "play_sound"
-    PLAY_RANDOM_SOUND = "play_random_sound"
     LIGHT       = "light"
     WEBHOOK     = "webhook"
 
@@ -55,24 +54,19 @@ class BaseAction(BaseModel):
     enabled: bool = True
 
 
-class PlaySoundAction(BaseAction):
-    type: Literal[ActionType.PLAY_SOUND]
-    file: str
-    volume: int = Field(ge=0, le=100, default=100)
-
-
-class RandomSoundClip(BaseModel):
+class SoundClip(BaseModel):
     file: str
     probability: int = Field(ge=0, le=100)
     volume: int = Field(ge=0, le=100, default=100)
 
 
-class PlayRandomSoundAction(BaseAction):
-    type: Literal[ActionType.PLAY_RANDOM_SOUND]
-    clips: list[RandomSoundClip] = Field(min_length=1)
+class PlaySoundAction(BaseAction):
+    """Plays one clip picked by weight; a single clip at probability 100 is a plain sound."""
+    type: Literal[ActionType.PLAY_SOUND]
+    clips: list[SoundClip] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def probabilities_must_sum_to_100(self) -> PlayRandomSoundAction:
+    def probabilities_must_sum_to_100(self) -> PlaySoundAction:
         total = sum(c.probability for c in self.clips)
         if total != 100:
             raise ValueError(f"clip probabilities must sum to 100, got {total}")
@@ -114,26 +108,15 @@ class WebhookAction(BaseAction):
 
 
 AnyAction = Annotated[
-    Union[PlaySoundAction, PlayRandomSoundAction, LightAction, WebhookAction],
+    Union[PlaySoundAction, LightAction, WebhookAction],
     Field(discriminator="type"),
 ]
 
-# Every action that plays sound files. Anything that filters or collects
-# sounds goes through this set and sound_refs, so a new sound action only
-# needs adding here (and teach sound_refs its shape if it differs).
-SOUND_TYPE_ACTIONS = frozenset({ActionType.PLAY_SOUND, ActionType.PLAY_RANDOM_SOUND})
-
-
-def _sound_dicts(action: dict) -> list[dict]:
-    """The dicts of a raw action that carry a `file`: the action itself, or each of its clips."""
-    return [action] + [c for c in action.get("clips", []) if isinstance(c, dict)]
-
-
 def sound_refs(action: dict) -> list[str]:
     """Sound files a raw (rules.json) action plays; empty for non-sound actions."""
-    if action.get("type") not in SOUND_TYPE_ACTIONS:
+    if action.get("type") != ActionType.PLAY_SOUND:
         return []
-    return [d["file"] for d in _sound_dicts(action) if d.get("file")]
+    return [c["file"] for c in action.get("clips", []) if c.get("file")]
 
 
 # --- Monitor configs ---
@@ -217,9 +200,7 @@ class Rule(BaseModel):
     @model_validator(mode="after")
     def sound_files_must_exist(self) -> Rule:
         for action in self.actions:
-            if isinstance(action, PlaySoundAction) and not resolve(action.file).is_file():
-                raise ValueError(f"Rule {self.id!r}: sound file not found: {action.file!r}")
-            if isinstance(action, PlayRandomSoundAction):
+            if isinstance(action, PlaySoundAction):
                 for clip in action.clips:
                     if not resolve(clip.file).is_file():
                         raise ValueError(f"Rule {self.id!r}: sound file not found: {clip.file!r}")
