@@ -24,6 +24,7 @@ class MonitorType(StrEnum):
     MAP   = "map"
     HERO  = "hero"
     ABILITY = "ability"
+    PERIODIC = "periodic"
 
 
 # --- Sound config ---
@@ -175,8 +176,32 @@ class AbilityMonitorConfig(MonitorConfig):
         return f"__ABILITY__{self.event}__{self.target}__"
 
 
+class PeriodicMonitorConfig(MonitorConfig):
+    """Fires every `period` seconds of game clock, shifted by `offset` seconds."""
+    type: Literal[MonitorType.PERIODIC]
+    period: int = Field(ge=1)
+    offset: int = Field(ge=-59, le=59, default=0)
+    # Game clock seconds (may be negative); only triggers inside [min_time, max_time] fire
+    min_time: int | None = None
+    max_time: int | None = None
+
+    @model_validator(mode="after")
+    def min_must_not_exceed_max(self) -> PeriodicMonitorConfig:
+        if self.min_time is not None and self.max_time is not None and self.min_time > self.max_time:
+            raise ValueError(f"min_time ({self.min_time}) cannot be greater than max_time ({self.max_time})")
+        return self
+
+    @property
+    def event(self) -> str:
+        return "TICK"
+
+    @property
+    def event_key(self) -> str:
+        return f"__PERIODIC__{self.period}__{self.offset}__{self.min_time}__{self.max_time}__"
+
+
 AnyMonitor = Annotated[
-    Union[ItemMonitorConfig, MidasMonitorConfig, BlinkMonitorConfig, MapMonitorConfig, HeroMonitorConfig, AbilityMonitorConfig],
+    Union[ItemMonitorConfig, MidasMonitorConfig, BlinkMonitorConfig, MapMonitorConfig, HeroMonitorConfig, AbilityMonitorConfig, PeriodicMonitorConfig],
     Field(discriminator="type"),
 ]
 

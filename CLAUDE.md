@@ -88,6 +88,9 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 | `midas`  | `MidasMonitorConfig` | `CHARGED` (0→1 charge), `OVERCHARGED` (→2 charges) |
 | `map`    | `MapMonitorConfig`   | `DAYTIME_STARTED`, `NIGHTTIME_STARTED`          |
 | `ability`| `AbilityMonitorConfig` | `COOLDOWN_STARTED` (cooldown 0 → > 0)         |
+| `periodic`| `PeriodicMonitorConfig` | fires when the game clock passes `k*period + offset` (`period` ≥ 1 s, `offset` -59..59, default 0; optional `min_time` / `max_time` clock seconds, inclusive, limit which triggers fire) |
+
+`periodic` monitors (`periodic_monitor.py`) use `map.clock_time`, which starts negative but never goes backwards. A trigger fires when it lies in (previous clock, current clock]; a gap spanning several triggers fires once, and the first update after start or a match change only records the clock.
 
 `ability` monitors take a `target` — the internal ability name from the GSI `abilities` block (e.g. `spectre_reality`), so no ability list is maintained in code. They only track learned abilities (`level > 0`) and ignore `max_cooldown` (the game reports it unreliably). Choosing an ability that actually has a cooldown is the rule author's responsibility.
 
