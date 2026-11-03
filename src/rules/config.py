@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class ActionType(StrEnum):
     PLAY_SOUND  = "play_sound"
-    PLAY_RANDOM_SOUND = "play_random_sound"
     LIGHT       = "light"
     WEBHOOK     = "webhook"
 
@@ -53,24 +52,19 @@ class BaseAction(BaseModel):
     enabled: bool = True
 
 
-class PlaySoundAction(BaseAction):
-    type: Literal[ActionType.PLAY_SOUND]
-    file: str
-    volume: int = Field(ge=0, le=100, default=100)
-
-
-class RandomSoundClip(BaseModel):
+class SoundClip(BaseModel):
     file: str
     probability: int = Field(ge=0, le=100)
     volume: int = Field(ge=0, le=100, default=100)
 
 
-class PlayRandomSoundAction(BaseAction):
-    type: Literal[ActionType.PLAY_RANDOM_SOUND]
-    clips: list[RandomSoundClip] = Field(min_length=1)
+class PlaySoundAction(BaseAction):
+    """Plays one clip picked by weight; a single clip at probability 100 is a plain sound."""
+    type: Literal[ActionType.PLAY_SOUND]
+    clips: list[SoundClip] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def probabilities_must_sum_to_100(self) -> PlayRandomSoundAction:
+    def probabilities_must_sum_to_100(self) -> PlaySoundAction:
         total = sum(c.probability for c in self.clips)
         if total != 100:
             raise ValueError(f"clip probabilities must sum to 100, got {total}")
@@ -112,7 +106,7 @@ class WebhookAction(BaseAction):
 
 
 AnyAction = Annotated[
-    Union[PlaySoundAction, PlayRandomSoundAction, LightAction, WebhookAction],
+    Union[PlaySoundAction, LightAction, WebhookAction],
     Field(discriminator="type"),
 ]
 
@@ -198,9 +192,7 @@ class Rule(BaseModel):
     @model_validator(mode="after")
     def sound_files_must_exist(self) -> Rule:
         for action in self.actions:
-            if isinstance(action, PlaySoundAction) and not Path(action.file).is_file():
-                raise ValueError(f"Rule {self.id!r}: sound file not found: {action.file!r}")
-            if isinstance(action, PlayRandomSoundAction):
+            if isinstance(action, PlaySoundAction):
                 for clip in action.clips:
                     if not Path(clip.file).is_file():
                         raise ValueError(f"Rule {self.id!r}: sound file not found: {clip.file!r}")
