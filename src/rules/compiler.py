@@ -15,8 +15,10 @@ from src.rules.config import (
     MapMonitorConfig,
     MidasMonitorConfig,
     MonitorType,
+    PeriodicMonitorConfig,
     Rule,
 )
+from src.rules.periodic_monitor import PeriodicMonitor
 from src.rules.item_monitors import BLINK_MONITOR_REGISTRY, ITEM_MONITOR_REGISTRY, ITEM_SPECIFIC_REGISTRIES, MIDAS_MONITOR_REGISTRY, ItemMonitor
 from src.rules.map_monitor import MapMonitor
 from src.rules.hero_monitor import HeroMonitor
@@ -28,6 +30,7 @@ class CompiledRules:
     map_monitors: list[MapMonitor] = field(default_factory=list)
     hero_monitors: list[HeroMonitor] = field(default_factory=list)
     ability_monitors: list[AbilityMonitor] = field(default_factory=list)
+    periodic_monitors: list[PeriodicMonitor] = field(default_factory=list)
 
 
 def _enabled(actions: list[AnyAction]) -> list[AnyAction]:
@@ -74,7 +77,14 @@ def _compile_ability(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: Rule
     compiled.ability_monitors.append(ABILITY_MONITOR_REGISTRY[m.event](m.target, m.event_key, bus))
 
 
+def _compile_periodic(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEventBus, ctx: EventContext, compiled: CompiledRules) -> None:
+    assert isinstance(m, PeriodicMonitorConfig)
+    bus.register(m.event_key, actions, ctx)
+    compiled.periodic_monitors.append(PeriodicMonitor(m.period, m.offset, m.event_key, bus, m.min_time, m.max_time))
+
+
 _MONITOR_HANDLERS: dict[MonitorType, _MonitorHandler] = {
+    MonitorType.PERIODIC: _compile_periodic,
     MonitorType.ABILITY: _compile_ability,
     MonitorType.ITEM:  _compile_item,
     MonitorType.MIDAS: _compile_midas,

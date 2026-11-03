@@ -97,10 +97,14 @@ class GameState:
             m.clear()
         for m in self._compiled_rules.ability_monitors:
             m.clear()
+        for m in self._compiled_rules.periodic_monitors:
+            m.clear()
 
     def _run_rule_monitors(self) -> None:
         if self.map:
             for monitor in self._compiled_rules.map_monitors:
+                monitor.evaluate(self.map)
+            for monitor in self._compiled_rules.periodic_monitors:
                 monitor.evaluate(self.map)
 
         if self.items:
