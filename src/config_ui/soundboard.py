@@ -126,6 +126,10 @@ def _download_audio(url: str, out_dir: Path) -> tuple[Path, str]:
         "no_warnings": True,
         "max_filesize": MAX_SOURCE_BYTES,
         "match_filter": too_long,
+        # A machine with a dead IPv6 route makes Python wait out the connect timeout on every
+        # IPv6 address before trying IPv4 (curl races them), which looks like a hang. Use IPv4.
+        "source_address": "0.0.0.0",
+        "socket_timeout": 20,
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
