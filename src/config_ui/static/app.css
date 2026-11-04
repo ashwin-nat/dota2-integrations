@@ -707,13 +707,6 @@ label.btn { display: inline-flex; align-items: center; }
 .follow-note { margin: 8px 0 0; }
 .invite .share-who > .btn { justify-self: start; }
 
-/* Random sound variations */
-.clip-row.many { padding: 6px 0; border-top: 1px dashed var(--line, rgba(255,255,255,.08)); }
-.clip-row.many:first-of-type { border-top: 0; }
-.clip-chance { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); flex: none; }
-.clip-chance input { width: 52px; }
-.clip-tools { display: flex; gap: 6px; margin-top: 8px; }
-
 /* Reminders */
 .reminder-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 .reminder-timing { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--line, rgba(255,255,255,.08)); border-radius: 8px; }
@@ -721,3 +714,19 @@ label.btn { display: inline-flex; align-items: center; }
 .reminder-timing .clock-input { width: 72px; flex: none; }
 .reminder-timing .field .hint { font-size: 11px; }
 .reminder-timing > .btn { margin-top: 8px; }
+
+/* ---------- Sound variants: odds bar ---------- */
+
+.dist-bar { display: flex; align-items: stretch; height: 34px; margin: 4px 0 10px; border: 1px solid #000; border-radius: 6px; background: #0b0e12; user-select: none; touch-action: none; }
+.dist-seg { flex-basis: 0; min-width: 0; display: grid; place-items: center; overflow: hidden; color: #10141a; font: 700 12px "Barlow Condensed", sans-serif; letter-spacing: .06em; transition: flex-grow .04s; }
+.dist-seg:first-child { border-radius: 5px 0 0 5px; }
+.dist-seg:last-child { border-radius: 0 5px 5px 0; }
+.dist-seg.zero { opacity: .5; }
+.dist-handle { flex: none; width: 10px; margin: 0 -5px; z-index: 1; cursor: ew-resize; display: grid; place-items: center; }
+.dist-handle::after { content: ""; width: 4px; height: 22px; border-radius: 2px; background: var(--text); border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,.2); }
+.dist-handle:hover::after, .dist-handle:focus-visible::after { background: var(--gold-hi); }
+.dist-handle:focus-visible { outline: none; }
+.clip-row + .clip-row { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.clip-swatch { flex: none; width: 10px; height: 26px; border-radius: 3px; }
+.clip-pct { flex: none; width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.add-row { margin-top: 8px; }

@@ -119,9 +119,7 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 | `ability`| `AbilityMonitorConfig` | `COOLDOWN_STARTED` (cooldown 0 → > 0)         |
 | `periodic`| `PeriodicMonitorConfig` | fires when the game clock passes `k*period + offset` (`period` ≥ 1 s, `offset` -59..59, default 0; optional `min_time` / `max_time` clock seconds, inclusive, limit which triggers fire) |
 
-In the editor, periodic rules are "Reminders" under Game events (presets for stacking, power and wisdom runes and lotus, or a custom timer); a sound action with several clips is shown as "Play one at random" with a chance per clip. `sharing._trigger` keys periodic monitors by their timing, since they have no event or target.
-
-`periodic` monitors (`periodic_monitor.py`) use `map.clock_time`, which starts negative but never goes backwards. A trigger fires when it lies in (previous clock, current clock]; a gap spanning several triggers fires once, and the first update after start or a match change only records the clock.
+In the editor, periodic rules are "Reminders" under Game events: presets (stack camps, bounty, power and wisdom runes, lotus) or a custom timer, with "every", an early/late shift (offset), "from" / "until" (`m:ss`) and a preview of the first play times. Each reminder is its own rule (`reminder_<preset>`); the compiler keys periodic monitors per rule, so two reminders on the same schedule each fire, and `sharing._trigger` keys them by schedule. `periodic` monitors (`periodic_monitor.py`) use `map.clock_time`, which starts negative but never goes backwards. A trigger fires when it lies in (previous clock, current clock]; a gap spanning several triggers fires once, and the first update after start or a match change only records the clock.
 
 `ability` monitors take a `target` — the internal ability name from the GSI `abilities` block (e.g. `spectre_reality`), so no ability list is maintained in code. They only track learned abilities (`level > 0`) and ignore `max_cooldown` (the game reports it unreliably). Choosing an ability that actually has a cooldown is the rule author's responsibility.
 
