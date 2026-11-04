@@ -396,6 +396,7 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 }
 .insp-icon { width: 72px; height: 54px; flex: none; border-radius: 3px; background: #0b0e12 center/cover; box-shadow: 0 0 0 1px #000, 0 0 0 2px var(--gold-lo); display: grid; place-items: center; font-size: 28px; }
 .insp-icon.square { width: 60px; height: 60px; }
+.insp-desc { margin: 14px 18px 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .insp-head h2 { margin: 0; font-family: "Cinzel", serif; font-size: 18px; letter-spacing: .05em; line-height: 1.2; }
 .insp-head code { font-size: 11px; color: var(--muted); }
 .insp-warn { margin: 12px 18px 0; padding: 8px 10px; border-left: 3px solid var(--gold); background: rgba(201,166,90,.08); font-size: 13px; color: var(--muted); }

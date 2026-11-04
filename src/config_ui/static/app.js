@@ -1748,7 +1748,7 @@ function renderInspector() {
     if (item && !item.has_cd) warn = "This item has no active, so Used and Ready never fire. Bought and Lost still work.";
   } else if (sel.kind === "ability") {
     const ab = lookup.abilities.get(sel.key);
-    head = { title: ab?.name || sel.key, img: abilityImg(sel.key), square: true, sub: ab?.hero.name };
+    head = { title: ab?.name || sel.key, img: abilityImg(sel.key), square: true, sub: ab?.hero.name, desc: ab?.desc };
     events = ABILITY_EVENTS.map((e) => ({ ...e, monitor: { type: "ability", target: sel.key, event: e.event } }));
     if (ab && !ab.has_cd) warn = "This looks like a passive (no cooldown), so it will never trigger.";
   } else {
@@ -1766,6 +1766,7 @@ function renderInspector() {
     h("div", { class: "insp-head" },
       h("div", { class: `insp-icon ${head.square ? "square" : ""}`, style: head.img ? { backgroundImage: `url("${head.img}")` } : null }, head.glyph || ""),
       h("div", {}, h("h2", {}, head.title), h("code", {}, head.sub ? `${head.sub} · ` : "", sel.key))),
+    head.desc ? h("p", { class: "insp-desc" }, head.desc) : null,
     warn ? h("div", { class: "insp-warn" }, warn) : null,
     timing || null,
     events.length > 1 ? h("div", { class: "event-tabs", role: "tablist" }, events.map((e) => {

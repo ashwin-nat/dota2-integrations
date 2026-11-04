@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # source OpenDota uses). Pinned so a bad upstream release can't break the UI.
 DOTACONSTANTS_URL = "https://cdn.jsdelivr.net/npm/dotaconstants@10.8.0/build/{name}.json"
 CACHE_PATH = Path(".cache/catalog.json")
+CATALOG_VERSION = 2  # bump when _build's output shape changes so stale caches refresh
 _fetch_lock = asyncio.Lock()
 
 _ITEM_GROUPS = {
@@ -64,7 +65,7 @@ def _build(heroes: dict, hero_abilities: dict, abilities: dict, items: dict) -> 
             ab = abilities.get(ab_key) or {}
             if not ab.get("dname") or ab_key.endswith("_stop") or "generic_hidden" in ab_key:
                 continue
-            hero_abs.append({"key": ab_key, "name": ab["dname"], "has_cd": _has_cooldown(ab.get("cd"))})
+            hero_abs.append({"key": ab_key, "name": ab["dname"], "desc": ab.get("desc") or "", "has_cd": _has_cooldown(ab.get("cd"))})
         hero_list.append({
             "key": key,
             "name": hero.get("localized_name", key),
@@ -91,15 +92,19 @@ def _build(heroes: dict, hero_abilities: dict, abilities: dict, items: dict) -> 
         })
     item_list.sort(key=lambda i: (i["cost"], i["name"]))
 
-    return {"heroes": hero_list, "items": item_list}
+    return {"v": CATALOG_VERSION, "heroes": hero_list, "items": item_list}
 
 
 async def load_catalog() -> dict | None:
     """Return the cached catalog, fetching it once if missing. None when offline with no cache."""
     async with _fetch_lock:
+        cached = None
         if CACHE_PATH.exists():
-            return json.loads(CACHE_PATH.read_text())
-        return await _download()
+            cached = json.loads(CACHE_PATH.read_text())
+            if cached.get("v") == CATALOG_VERSION:
+                return cached
+        # Missing or from an older shape (e.g. before ability descriptions): refetch, keep the old one if offline
+        return await _download() or cached
 
 
 async def _download() -> dict | None:
