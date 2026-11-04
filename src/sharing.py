@@ -351,6 +351,9 @@ def _trigger(monitor: object) -> str:
     # Blink has its own monitor type but is the same trigger as an item rule on item_blink
     if m.get("type") == "blink":
         m = {"type": "item", "target": "item_blink", "event": m.get("event")}
+    # Periodic monitors have no event or target: their timing is what tells them apart
+    if m.get("type") == "periodic":
+        return f"periodic|{m.get('period')}|{m.get('offset', 0)}|{m.get('min_time')}|{m.get('max_time')}"
     return f"{m.get('type')}|{m.get('target', '')}|{m.get('event')}"
 
 

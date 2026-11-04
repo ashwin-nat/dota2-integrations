@@ -34,6 +34,15 @@ const GAME_EVENTS = [
   { type: "midas", event: "OVERCHARGED", label: "Midas overcharged", sub: "2 charges, wasted gold!", img: itemImg("hand_of_midas") },
 ];
 
+// Periodic triggers on the game clock. offset shifts each trigger (negative = that many seconds early);
+// min_time / max_time are clock seconds limiting which triggers fire. Timings follow the current patch.
+const REMINDER_PRESETS = [
+  { id: "stack", label: "Stack camps", sub: "Every minute at x:53", glyph: "🏕️", monitor: { period: 60, offset: -7, min_time: 0, max_time: null } },
+  { id: "power_rune", label: "Power rune", sub: "15 s before each 2:00 rune, from 6:00", glyph: "⚡", monitor: { period: 120, offset: -15, min_time: 345, max_time: null } },
+  { id: "wisdom_rune", label: "Wisdom runes", sub: "30 s before each 7:00 rune", glyph: "📘", monitor: { period: 420, offset: -30, min_time: 0, max_time: null } },
+  { id: "lotus", label: "Lotus pool", sub: "15 s before each 3:00 lotus", glyph: "🪷", monitor: { period: 180, offset: -15, min_time: 0, max_time: null } },
+];
+
 const LIGHT_PRESETS = ["#ff0000", "#ff8800", "#ffd23f", "#33cc33", "#00c8ff", "#3355ff", "#a020f0", "#ffffff"];
 
 // ---- State ----
@@ -125,7 +134,10 @@ async function loadAll() {
 const isBlink = (m) => m.type === "blink";
 const monitorTarget = (m) => (m.type === "midas" ? "item_hand_of_midas" : isBlink(m) ? "item_blink" : m.target);
 
+const periodicKey = (m) => [m.period, m.offset ?? 0, m.min_time ?? null, m.max_time ?? null].join("|");
+
 function sameMonitor(a, b) {
+  if (a.type === "periodic" || b.type === "periodic") return a.type === b.type && periodicKey(a) === periodicKey(b);
   const norm = (m) => (isBlink(m) ? { type: "item", target: "item_blink", event: m.event } : m);
   a = norm(a); b = norm(b);
   return a.type === b.type && (a.target || "") === (b.target || "") && a.event === b.event;
@@ -171,8 +183,27 @@ const stripExt = (name) => name.replace(/\.[^.]+$/, "");
 const fileName = (file) => stripExt(file.replace(/^media\//, ""));
 const mediaLabel = (m) => stripExt(m.name);
 const hasMedia = (file) => S.media.some((m) => m.file === file);
-// A play_sound action holds weighted clips; the editor only offers a single clip at 100% for now
+// A play_sound action plays one of its clips, picked at random by probability (they sum to 100)
 const clipOf = (a) => a.clips[0];
+const clipFiles = (a) => a.clips.map((c) => c.file);
+const soundMissing = (a) => a.type === "play_sound" && a.clips.some((c) => !hasMedia(c.file));
+function pickClip(a) {
+  let roll = Math.random() * 100;
+  return a.clips.find((c) => (roll -= c.probability) < 0) || a.clips[a.clips.length - 1];
+}
+// Equal chances, any remainder going to the first clip so the total is exactly 100
+function splitEvenly(a) {
+  const n = a.clips.length, each = Math.floor(100 / n);
+  a.clips.forEach((c, i) => { c.probability = each + (i === 0 ? 100 - each * n : 0); });
+}
+function soundChips(a, off) {
+  const many = a.clips.length > 1;
+  return a.clips.map((c) => {
+    const ok = hasMedia(c.file);
+    return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: c.file },
+      ok ? playButton(c.file, () => c.volume) : "♪ ", fileName(c.file), many ? ` · ${c.probability}% chance` : ` · ${c.volume}%`);
+  });
+}
 
 function describeTrigger(m) {
   const ev = (list) => list.find((e) => e.event === m.event)?.label || m.event;
@@ -185,8 +216,58 @@ function describeTrigger(m) {
     const ab = lookup.abilities.get(m.target);
     return { title: `${ab?.name || m.target} · Cast`, sub: ab ? `${ab.hero.name} · ${m.target}` : m.target, img: abilityImg(m.target), square: true };
   }
+  if (m.type === "periodic") {
+    const preset = reminderPreset(m);
+    return { title: preset ? `Reminder · ${preset.label}` : `Reminder · every ${clock(m.period)}`, sub: reminderSummary(m), glyph: preset?.glyph || "⏰" };
+  }
   const g = GAME_EVENTS.find((e) => e.type === m.type && e.event === m.event);
   return { title: g?.label || m.event, sub: g?.sub || m.type, img: g?.img, glyph: g?.glyph };
+}
+
+// ---- Reminders (periodic monitors) ----
+
+// Game clock seconds as m:ss; the clock is negative before the horn
+const clock = (sec) => `${sec < 0 ? "-" : ""}${Math.floor(Math.abs(sec) / 60)}:${String(Math.abs(sec) % 60).padStart(2, "0")}`;
+function parseClock(text) {
+  const t = text.trim();
+  if (!t) return null;
+  const m = t.match(/^(-)?(?:(\d+):)?(\d{1,2})$/);
+  if (!m) return undefined;
+  const sec = (+(m[2] || 0)) * 60 + +m[3];
+  return m[1] ? -sec : sec;
+}
+const reminderPreset = (m) => REMINDER_PRESETS.find((p) => sameMonitor({ type: "periodic", ...p.monitor }, m));
+
+// The first few clock times this reminder fires at, as the backend computes them
+function reminderTimes(m, count = 4) {
+  const off = m.offset ?? 0;
+  const start = Math.max(m.min_time ?? -90, -90);
+  let t = start + (((off - start) % m.period) + m.period) % m.period;
+  const out = [];
+  for (; out.length < count && (m.max_time == null || t <= m.max_time); t += m.period) out.push(t);
+  return out;
+}
+
+function reminderSummary(m) {
+  const off = m.offset ?? 0;
+  const shift = off < 0 ? `, ${-off} s early` : off > 0 ? `, ${off} s late` : "";
+  const range = [m.min_time != null ? `from ${clock(m.min_time)}` : "", m.max_time != null ? `until ${clock(m.max_time)}` : ""].filter(Boolean).join(" ");
+  return `Every ${clock(m.period)}${shift}${range ? `, ${range}` : ""}`;
+}
+
+function addReminder(preset) {
+  const monitor = { type: "periodic", period: 300, offset: 0, min_time: 0, max_time: null, ...preset?.monitor };
+  let rule = rulesFor(monitor)[0];
+  if (!rule) {
+    const base = `reminder_${preset?.id || "custom"}`;
+    let id = base;
+    for (let n = 2; S.config.rules.some((r) => r.id === id); n++) id = `${base}_${n}`;
+    rule = { id, monitor, actions: [] };
+    S.config.rules.push(rule);
+    S.newRuleIds.add(id);
+  }
+  S.tab = "events";
+  select({ kind: "reminder", key: rule.id });
 }
 
 // ---- Dirty / save ----
@@ -217,7 +298,10 @@ function renderStatus(text, cls) {
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function actionText(a) {
-  if (a.type === "play_sound") return `play ${clipOf(a).file || "(no sound)"}${clipOf(a).volume != null ? ` at ${clipOf(a).volume}%` : ""}`;
+  if (a.type === "play_sound") {
+    if (a.clips.length === 1) return `play ${clipOf(a).file || "(no sound)"} at ${clipOf(a).volume}%`;
+    return `play one of ${a.clips.map((c) => `${c.file} (${c.probability}%, at ${c.volume}%)`).join(", ")}`;
+  }
   if (a.type === "light") return `light rgb(${a.r}, ${a.g}, ${a.b})`;
   if (a.type === "reset_light") return "reset light";
   return a.type;
@@ -445,25 +529,25 @@ function slot({ img, label, cost, cls = "", count = 0, selected, onclick, title 
   return el;
 }
 
-const RULE_KINDS = [["", "All triggers"], ["item", "Items"], ["ability", "Abilities"], ["game", "Game events"]];
+const RULE_KINDS = [["", "All triggers"], ["item", "Items"], ["ability", "Abilities"], ["game", "Game events"], ["reminder", "Reminders"]];
 const RULE_ACTIONS = [["", "Any action"], ["play_sound", "Plays a sound"], ["light", "Sets a light"], ["webhook", "Calls a webhook"], ["missing", "Missing sound file"]];
 const RULE_SORTS = [["default", "File order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["kind", "Trigger type"], ["actions", "Most actions"]];
 
-const ruleKind = (m) => (["item", "blink", "midas"].includes(m.type) ? "item" : m.type === "ability" ? "ability" : "game");
+const ruleKind = (m) => (["item", "blink", "midas"].includes(m.type) ? "item" : m.type === "ability" ? "ability" : m.type === "periodic" ? "reminder" : "game");
 
 function visibleRules() {
   const q = S.ruleQuery.trim().toLowerCase();
   const rules = S.config.rules.filter((r) => {
     if (S.ruleKind && ruleKind(r.monitor) !== S.ruleKind) return false;
-    if (S.ruleAction === "missing" && !r.actions.some((a) => a.type === "play_sound" && !hasMedia(clipOf(a).file))) return false;
+    if (S.ruleAction === "missing" && !r.actions.some(soundMissing)) return false;
     if (S.ruleAction && S.ruleAction !== "missing" && !r.actions.some((a) => a.type === S.ruleAction)) return false;
     if (!q) return true;
     const d = describeTrigger(r.monitor);
-    const text = [r.id, d.title, d.sub, ...r.actions.map((a) => (a.type === "play_sound" ? fileName(clipOf(a).file) : a.url || ""))];
+    const text = [r.id, d.title, d.sub, ...r.actions.flatMap((a) => (a.type === "play_sound" ? clipFiles(a).map(fileName) : [a.url || ""]))];
     return text.some((t) => t && t.toLowerCase().includes(q));
   });
   const title = (r) => describeTrigger(r.monitor).title.toLowerCase();
-  const order = { item: 0, ability: 1, game: 2 };
+  const order = { item: 0, ability: 1, game: 2, reminder: 3 };
   const sorts = {
     name: (a, b) => title(a).localeCompare(title(b)),
     "name-desc": (a, b) => title(b).localeCompare(title(a)),
@@ -495,13 +579,9 @@ function renderRules() {
   const idle = rules.filter((r) => !activeActions(r).length);
   const row = (r) => {
     const d = describeTrigger(r.monitor);
-    const acts = r.actions.map((a) => {
+    const acts = r.actions.flatMap((a) => {
       const off = a.enabled === false ? "off" : "";
-      if (a.type === "play_sound") {
-        const ok = hasMedia(clipOf(a).file);
-        return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: clipOf(a).file },
-          ok ? playButton(clipOf(a).file, () => clipOf(a).volume) : "♪ ", fileName(clipOf(a).file), ` · ${clipOf(a).volume}%`);
-      }
+      if (a.type === "play_sound") return soundChips(a, off);
       if (a.type === "light") return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline");
       return h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook");
     });
@@ -509,8 +589,8 @@ function renderRules() {
     return h("div", {
       class: `rule-row ${activeActions(r).length ? "" : "inactive"}`,
       role: "button", tabindex: "0",
-      onclick: () => jumpTo(r.monitor),
-      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); jumpTo(r.monitor); } },
+      onclick: () => jumpTo(r.monitor, r),
+      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); jumpTo(r.monitor, r); } },
     },
     h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
     h("span", { class: "trig" }, h("div", { class: "t" }, d.title), h("div", { class: "s" }, d.sub)),
@@ -539,8 +619,11 @@ function followedNote() {
     ". ", h("button", { class: "linkish", onclick: () => { S.tab = "friends"; render(); } }, "Manage in Friends"));
 }
 
-function jumpTo(monitor) {
-  if (monitor.type === "item" || monitor.type === "blink") {
+function jumpTo(monitor, rule) {
+  if (monitor.type === "periodic") {
+    S.tab = "events";
+    select({ kind: "reminder", key: (rule || rulesFor(monitor)[0])?.id });
+  } else if (monitor.type === "item" || monitor.type === "blink") {
     S.tab = "items";
     select({ kind: "item", key: monitorTarget(monitor), event: monitor.event });
   } else if (monitor.type === "ability") {
@@ -638,6 +721,22 @@ function renderHeroDetail(hero) {
 }
 
 function renderEvents() {
+  const reminders = S.config.rules.filter((r) => r.monitor.type === "periodic");
+  const card = ({ key, glyph, label, sub, n, onclick }) => h("button", {
+    class: `event-card ${n ? "has-rules" : ""} ${S.selection?.kind === "reminder" && S.selection.key === key ? "selected" : ""}`, onclick,
+  }, h("span", { class: "glyph" }, glyph), h("span", {}, h("div", { class: "t" }, label), h("div", { class: "s" }, sub)), n ? h("span", { class: "badge" }, `${n} ⚡`) : null);
+  const reminderSection = [
+    h("div", { class: "section-title" }, "Reminders", h("span", { class: "count" }, reminders.length)),
+    h("p", { class: "hint" }, "Play a sound on the game clock: stack camps, runes, lotus, or any timer you like."),
+    reminders.length ? h("div", { class: "event-grid" }, reminders.map((r) => {
+      const d = describeTrigger(r.monitor);
+      return card({ key: r.id, glyph: d.glyph, label: d.title.replace(/^Reminder · /, ""), sub: d.sub, n: activeActions(r).length, onclick: () => select({ kind: "reminder", key: r.id }) });
+    })) : null,
+    h("div", { class: "reminder-add" }, h("span", { class: "hint" }, "Add:"),
+      REMINDER_PRESETS.filter((p) => !reminders.some((r) => sameMonitor(r.monitor, { type: "periodic", ...p.monitor })))
+        .map((p) => h("button", { class: "btn btn-sm", title: p.sub, onclick: () => addReminder(p) }, `${p.glyph} ${p.label}`)),
+      h("button", { class: "btn btn-sm", onclick: () => addReminder(null) }, "⏰ Custom timer")),
+  ];
   return [
     h("div", { class: "board-head" }, h("h1", {}, "Game events")),
     h("div", { class: "event-grid" }, GAME_EVENTS.map((g) => {
@@ -651,12 +750,13 @@ function renderEvents() {
       h("span", {}, h("div", { class: "t" }, g.label), h("div", { class: "s" }, g.sub)),
       n ? h("span", { class: "badge" }, `${n} ⚡`) : null);
     })),
+    ...reminderSection,
   ];
 }
 
 function renderSounds() {
   const usage = new Map();
-  for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound") usage.set(clipOf(a).file, (usage.get(clipOf(a).file) || 0) + 1);
+  for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound") for (const f of clipFiles(a)) usage.set(f, (usage.get(f) || 0) + 1);
   const input = h("input", { type: "file", accept: ".mp3,.wav,.ogg,audio/*", multiple: true, id: "upload-input" });
   input.addEventListener("change", async () => { for (const f of input.files) await uploadFile(f); render(); });
   const zone = h("div", { class: "dropzone" }, "Drop .mp3 / .wav / .ogg clips here, or ", h("label", { for: "upload-input" }, "browse"), input);
@@ -676,7 +776,7 @@ function renderSounds() {
         // Keep the expected name but the dropped file's real extension
         const path = await uploadFile(file, fileName(f) + file.name.slice(file.name.lastIndexOf(".")));
         if (!path) return;
-        for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound" && clipOf(a).file === f) { clipOf(a).file = path; a.enabled = true; }
+        for (const r of S.config.rules) for (const a of r.actions) if (a.type === "play_sound" && clipFiles(a).includes(f)) { for (const c of a.clips) if (c.file === f) c.file = path; a.enabled = true; }
         markDirty();
         render();
       });
@@ -718,15 +818,17 @@ async function refreshClips() {
   S.media = media;
 }
 
-const ruleUses = (file) => S.config.rules.filter((r) => r.actions.some((a) => a.type === "play_sound" && clipOf(a).file === file)).length;
+const ruleUses = (file) => S.config.rules.filter((r) => r.actions.some((a) => a.type === "play_sound" && clipFiles(a).includes(file))).length;
 
-// The server already rewrote rules.json for a renamed (to) or deleted (to = null) clip.
+// The server already rewrote rules.json for a renamed (to) or deleted (to = null) clip:
+// a rename repoints clips, a delete removes the sound actions that could play it.
 // Mirror that in the editor's copy and its saved snapshot so unsaved edits stay intact.
 function applyClipFileChange(from, to) {
   const fix = (cfg) => {
-    for (const r of cfg.rules) for (const a of r.actions) {
-      if (a.type !== "play_sound" || clipOf(a).file !== from) continue;
-      if (to) clipOf(a).file = to; else a.enabled = false;
+    for (const r of cfg.rules) {
+      const hit = (a) => a.type === "play_sound" && clipFiles(a).includes(from);
+      if (!to) { r.actions = r.actions.filter((a) => !hit(a)); continue; }
+      for (const a of r.actions) if (hit(a)) for (const c of a.clips) if (c.file === from) c.file = to;
     }
   };
   fix(S.config);
@@ -1179,9 +1281,9 @@ function ago(iso) {
   return `${Math.round(s / 86400)} days ago`;
 }
 
-const soundFiles = (r) => r.actions.filter((a) => a.type === "play_sound").map((a) => clipOf(a).file).sort().join("|");
+const soundFiles = (r) => r.actions.filter((a) => a.type === "play_sound").flatMap(clipFiles).sort().join("|");
 // A sound the shared folder doesn't have: the rule can't be copied
-const brokenRule = (r) => r.actions.some((a) => a.type === "play_sound" && !hasMedia(clipOf(a).file));
+const brokenRule = (r) => r.actions.some(soundMissing);
 const hasSound = (r) => r.actions.some((a) => a.type === "play_sound" && a.enabled !== false);
 const haveRule = (rule) => S.config.rules.some((r) => sameMonitor(r.monitor, rule.monitor) && soundFiles(r) === soundFiles(rule));
 // One of your rules already plays a different sound on this trigger
@@ -1189,7 +1291,7 @@ const clashingRules = (rule) => S.config.rules.filter((r) => sameMonitor(r.monit
 
 function copyFriendRules(friend, rules, { replace = false } = {}) {
   // All or nothing: a rule whose sound isn't in your library could never play
-  const missing = [...new Set(rules.flatMap((r) => r.actions.filter((a) => a.type === "play_sound" && !hasMedia(clipOf(a).file)).map((a) => fileName(clipOf(a).file))))];
+  const missing = [...new Set(rules.flatMap((r) => r.actions.filter((a) => a.type === "play_sound").flatMap(clipFiles).filter((f) => !hasMedia(f)).map(fileName)))];
   if (missing.length) {
     toast(`Nothing copied: ${friend.name}'s sound${missing.length === 1 ? "" : "s"} ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} in the shared folder. Ask them to re-upload ${missing.length === 1 ? "it" : "them"}.`, "err");
     return;
@@ -1446,13 +1548,10 @@ function renderFriend(f) {
     return h("div", { class: "rule-row friend-rule" },
       h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
       h("span", { class: "trig" }, h("div", { class: "t" }, d.title),
-        h("div", { class: "s" }, clash ? `You already have: ${clashingRules(r).flatMap((m) => m.actions.filter((a) => a.type === "play_sound").map((a) => fileName(clipOf(a).file))).join(", ")}` : d.sub)),
-      h("span", { class: "acts" }, r.actions.map((a) => {
+        h("div", { class: "s" }, clash ? `You already have: ${clashingRules(r).flatMap((m) => m.actions.filter((a) => a.type === "play_sound").flatMap(clipFiles).map(fileName)).join(", ")}` : d.sub)),
+      h("span", { class: "acts" }, r.actions.flatMap((a) => {
         const off = a.enabled === false ? "off" : "";
-        if (a.type === "play_sound") {
-          return h("span", { class: `chip ${off} ${hasMedia(clipOf(a).file) ? "" : "missing"}`, title: clipOf(a).file },
-            hasMedia(clipOf(a).file) ? playButton(clipOf(a).file, () => clipOf(a).volume) : null, fileName(clipOf(a).file), ` · ${clipOf(a).volume}%`);
-        }
+        if (a.type === "play_sound") return soundChips(a, off);
         return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), "light");
       })),
       haveRule(r) ? h("span", { class: "have" }, "✓ In yours")
@@ -1613,8 +1712,15 @@ function renderInspector() {
     return;
   }
 
-  let head, events, warn;
-  if (sel.kind === "item") {
+  let head, events, warn, timing;
+  if (sel.kind === "reminder") {
+    const rule = S.config.rules.find((r) => r.id === sel.key);
+    if (!rule) { S.selection = null; renderInspector(); return; }
+    const d = describeTrigger(rule.monitor);
+    head = { title: d.title.replace(/^Reminder · /, ""), glyph: d.glyph, sub: "Reminder" };
+    events = [{ event: "TICK", label: "Timer", desc: "Each time the timer comes round, this plays.", monitor: rule.monitor }];
+    timing = renderReminderTiming(rule);
+  } else if (sel.kind === "item") {
     const item = lookup.items.get(sel.key);
     head = { title: item?.name || sel.key, img: itemImg(item?.img || sel.key.replace(/^item_/, "")) };
     events = ITEM_EVENTS.map((e) => ({ ...e, monitor: { type: "item", target: sel.key, event: e.event } }));
@@ -1641,6 +1747,7 @@ function renderInspector() {
       h("div", { class: `insp-icon ${head.square ? "square" : ""}`, style: head.img ? { backgroundImage: `url("${head.img}")` } : null }, head.glyph || ""),
       h("div", {}, h("h2", {}, head.title), h("code", {}, head.sub ? `${head.sub} · ` : "", sel.key))),
     warn ? h("div", { class: "insp-warn" }, warn) : null,
+    timing || null,
     events.length > 1 ? h("div", { class: "event-tabs", role: "tablist" }, events.map((e) => {
       const live = rulesFor(e.monitor).some((r) => activeActions(r).length);
       return h("button", {
@@ -1650,6 +1757,42 @@ function renderInspector() {
     })) : h("div", { style: { height: "14px" } }),
     renderEventBody(current),
   ].filter(Boolean));
+}
+
+function renderReminderTiming(rule) {
+  const m = rule.monitor;
+  const changed = () => { markDirty(); render(); };
+  const clockInput = (label, key, { required = false, hint } = {}) => h("div", { class: "field" }, h("span", { class: "lbl" }, label),
+    h("input", { type: "text", inputmode: "numeric", placeholder: required ? "m:ss" : "any", value: m[key] == null ? "" : clock(m[key]), "aria-label": label, class: "clock-input",
+      onchange: (e) => {
+        const v = parseClock(e.target.value);
+        if (v === undefined || (required && (v == null || v < 1))) { toast(`${label}: use minutes:seconds, like 2:00`, "err"); render(); return; }
+        if (key !== "period" && v != null && ((key === "min_time" && m.max_time != null && v > m.max_time) || (key === "max_time" && m.min_time != null && v < m.min_time))) {
+          toast("“From” has to be before “Until”", "err"); render(); return;
+        }
+        m[key] = v;
+        changed();
+      } }),
+    hint ? h("span", { class: "hint" }, hint) : null);
+  const off = m.offset ?? 0;
+  const secs = h("input", { type: "number", min: 0, max: 59, value: Math.abs(off), "aria-label": "Seconds",
+    onchange: (e) => { const n = Math.max(0, Math.min(59, Math.round(+e.target.value || 0))); m.offset = dir.value === "late" ? n : -n; changed(); } });
+  const dir = h("select", { "aria-label": "Early or late", onchange: () => { const n = Math.abs(m.offset ?? 0); m.offset = dir.value === "late" ? n : -n; changed(); } },
+    h("option", { value: "early", selected: off <= 0 }, "s early"), h("option", { value: "late", selected: off > 0 }, "s late"));
+  const times = reminderTimes(m);
+  const remove = () => {
+    if (rule.actions.length && !confirm("Delete this reminder and its sounds?")) return;
+    S.config.rules.splice(S.config.rules.indexOf(rule), 1);
+    S.selection = null;
+    changed();
+  };
+  return h("div", { class: "reminder-timing" },
+    clockInput("Every", "period", { required: true }),
+    h("div", { class: "field", title: "Shift each reminder so you have time to act (up to 59 s)" }, h("span", { class: "lbl" }, "Shift"), secs, dir),
+    clockInput("From", "min_time", { hint: "game clock, blank = from the start" }),
+    clockInput("Until", "max_time", { hint: "blank = all game" }),
+    h("p", { class: "hint" }, times.length ? `Plays at ${times.map(clock).join(", ")}${m.max_time == null || times.length === 4 ? "…" : ""}` : "This range never fires."),
+    h("button", { class: "btn btn-sm btn-ghost btn-danger", onclick: remove }, "Delete reminder"));
 }
 
 function renderEventBody(ev) {
@@ -1731,26 +1874,56 @@ function renderAction(rule, a, monitor, changed) {
   const cls = `action ${a.type === "play_sound" ? "sound" : a.type} ${a.enabled === false ? "disabled" : ""}`;
 
   if (a.type === "play_sound") {
-    const known = hasMedia(clipOf(a).file);
-    const current = S.media.find((m) => m.file === clipOf(a).file);
-    const sel = h("button", { class: `sound-pick ${known ? "" : "missing"}`, type: "button", title: "Choose a sound", "aria-label": "Choose sound",
-      onclick: () => openSoundPicker(sel, clipOf(a).file, (file) => { clipOf(a).file = file; changed(); }) },
-      h("span", { class: "sb-emoji" }, known ? clipEmoji(clipOf(a).file) : "⚠"),
-      h("span", { class: "sb-name" }, known ? mediaLabel(current) : `${fileName(clipOf(a).file)} (missing)`),
-      h("span", { class: "sound-pick-caret" }, "▾"));
-    const out = h("output", {}, `${clipOf(a).volume}%`);
-    const vol = h("input", { type: "range", min: 0, max: 100, value: clipOf(a).volume, "aria-label": "Volume",
-      oninput: (e) => { clipOf(a).volume = +e.target.value; out.value = `${clipOf(a).volume}%`; markDirty(); } });
-    const pcBtn = h("button", { class: "btn btn-sm btn-ghost", title: "Play it through the app, like in-game", disabled: !known,
-      onclick: () => api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: clipOf(a).file, volume: clipOf(a).volume }) }).catch((e) => toast(e.message, "err")) }, "🔊 Test");
+    const many = a.clips.length > 1;
+    const total = a.clips.reduce((n, c) => n + c.probability, 0);
+    const play = (c) => api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: c.file, volume: c.volume }) }).catch((e) => toast(e.message, "err"));
+    const clipRow = (c, i) => {
+      const known = hasMedia(c.file);
+      const current = S.media.find((m) => m.file === c.file);
+      const sel = h("button", { class: `sound-pick ${known ? "" : "missing"}`, type: "button", title: "Choose a sound", "aria-label": "Choose sound",
+        onclick: () => openSoundPicker(sel, c.file, (file) => { c.file = file; changed(); }) },
+        h("span", { class: "sb-emoji" }, known ? clipEmoji(c.file) : "⚠"),
+        h("span", { class: "sb-name" }, known ? mediaLabel(current) : `${fileName(c.file)} (missing)`),
+        h("span", { class: "sound-pick-caret" }, "▾"));
+      const out = h("output", {}, `${c.volume}%`);
+      const vol = h("input", { type: "range", min: 0, max: 100, value: c.volume, "aria-label": "Volume",
+        oninput: (e) => { c.volume = +e.target.value; out.value = `${c.volume}%`; markDirty(); } });
+      const chance = many ? h("label", { class: "clip-chance", title: "Chance this sound is the one that plays" },
+        h("input", { type: "number", min: 0, max: 100, value: c.probability, "aria-label": "Chance",
+          onchange: (e) => { c.probability = Math.max(0, Math.min(100, Math.round(+e.target.value || 0))); changed(); } }), "%") : null;
+      const remove = many ? h("button", { class: "btn btn-sm btn-ghost btn-danger", title: "Remove this sound", "aria-label": "Remove sound",
+        onclick: () => { a.clips.splice(i, 1); splitEvenly(a); changed(); } }, "✕") : null;
+      return h("div", { class: `clip-row ${many ? "many" : ""}` },
+        h("div", { class: "field" }, known ? playButton(c.file, () => c.volume) : h("span", { class: "play missing" }, "!"), sel, chance, remove),
+        h("div", { class: "field" }, h("span", { class: "lbl" }, "Volume"), vol, out));
+    };
+    const missing = a.clips.some((c) => !hasMedia(c.file));
+    const pcBtn = h("button", { class: "btn btn-sm btn-ghost", title: many ? "Play one at random through the app, like in-game" : "Play it through the app, like in-game",
+      disabled: missing, onclick: () => play(pickClip(a)) }, "🔊 Test");
+    const addClip = () => {
+      const unused = S.media.find((m) => !clipFiles(a).includes(m.file)) || S.media[0];
+      a.clips.push({ file: unused.file, probability: 0, volume: clipOf(a).volume });
+      splitEvenly(a);
+      changed();
+    };
     const card = h("div", { class: cls },
-      h("div", { class: "action-head" }, h("span", { class: "kind" }, "♪ Play sound"), pcBtn, enabled, del),
-      h("div", { class: "field" }, known ? playButton(clipOf(a).file, () => clipOf(a).volume) : h("span", { class: "play missing" }, "!"), sel),
-      h("div", { class: "field" }, h("span", { class: "lbl" }, "Volume"), vol, out),
-      known ? null : h("div", { class: "missing-note" }, "This file isn't in media/ yet. Drop a clip onto this card to add it."));
+      h("div", { class: "action-head" }, h("span", { class: "kind" }, many ? "🎲 Play one at random" : "♪ Play sound"), pcBtn, enabled, del),
+      a.clips.map(clipRow),
+      many && total !== 100 ? h("div", { class: "missing-note" }, `Chances add up to ${total}%; they need to add up to 100%. `,
+        h("button", { class: "linkish", onclick: () => { splitEvenly(a); changed(); } }, "Split evenly")) : null,
+      h("div", { class: "clip-tools" },
+        h("button", { class: "btn btn-sm btn-ghost", disabled: !S.media.length, title: "Each time this triggers, one of the sounds plays at random", onclick: addClip },
+          many ? "+ Another sound" : "+ Random variation"),
+        many && total === 100 ? h("button", { class: "btn btn-sm btn-ghost", onclick: () => { splitEvenly(a); changed(); } }, "Split evenly") : null),
+      missing ? h("div", { class: "missing-note" }, "A sound here isn't in media/ yet. Drop a clip onto this card to add it.") : null);
     makeDropTarget(card, async ([file]) => {
       const path = await uploadFile(file);
-      if (path) { clipOf(a).file = path; a.enabled = true; changed(); }
+      if (!path) return;
+      // Fill the first missing sound; with every sound present, a dropped clip becomes another variation
+      const gap = a.clips.find((c) => !hasMedia(c.file)) || (many ? null : clipOf(a));
+      if (gap) gap.file = path; else { a.clips.push({ file: path, probability: 0, volume: clipOf(a).volume }); splitEvenly(a); }
+      a.enabled = true;
+      changed();
     });
     return card;
   }
