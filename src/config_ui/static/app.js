@@ -174,6 +174,7 @@ const mediaLabel = (m) => stripExt(m.name);
 const hasMedia = (file) => S.media.some((m) => m.file === file);
 // A play_sound action holds weighted clips; the editor only offers a single clip at 100% for now
 const clipOf = (a) => a.clips[0];
+const CLIP_COLOURS = ["#c9a65a", "#4f8fd6", "#5fa85a", "#b8392a", "#8a6ad1", "#3fb0b0"];
 
 function describeTrigger(m) {
   const ev = (list) => list.find((e) => e.event === m.event)?.label || m.event;
@@ -219,7 +220,7 @@ function renderStatus(text, cls) {
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 function actionText(a) {
-  if (a.type === "play_sound") return `play ${clipOf(a).file || "(no sound)"}${clipOf(a).volume != null ? ` at ${clipOf(a).volume}%` : ""}`;
+  if (a.type === "play_sound") return a.clips.length > 1 ? `play one of ${a.clips.length} sounds` : `play ${clipOf(a).file || "(no sound)"}${clipOf(a).volume != null ? ` at ${clipOf(a).volume}%` : ""}`;
   if (a.type === "light") return `light rgb(${a.r}, ${a.g}, ${a.b})`;
   if (a.type === "reset_light") return "reset light";
   return a.type;
@@ -493,15 +494,17 @@ function ruleToolbar() {
 
 function ruleRow(r) {
   const d = describeTrigger(r.monitor);
-  const acts = r.actions.map((a) => {
+  const acts = r.actions.flatMap((a) => {
     const off = a.enabled === false ? "off" : "";
     if (a.type === "play_sound") {
-      const ok = hasMedia(clipOf(a).file);
-      return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: clipOf(a).file },
-        ok ? playButton(clipOf(a).file, () => clipOf(a).volume) : "♪ ", fileName(clipOf(a).file), ` · ${clipOf(a).volume}%`);
+      return a.clips.map((c) => {
+        const ok = hasMedia(c.file);
+        return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: c.file },
+          ok ? playButton(c.file, () => c.volume) : "♪ ", a.clips.length > 1 ? `${fileName(c.file)} · ${c.probability}%` : `${fileName(c.file)} · ${c.volume}%`);
+      });
     }
-    if (a.type === "light") return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline");
-    return h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook");
+    if (a.type === "light") return [h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline")];
+    return [h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook")];
   });
   // A div, not a button: the sound chips hold their own preview buttons
   return h("div", {
@@ -1864,26 +1867,113 @@ function renderAction(rule, a, monitor, changed) {
   const cls = `action ${a.type === "play_sound" ? "sound" : a.type} ${a.enabled === false ? "disabled" : ""}`;
 
   if (a.type === "play_sound") {
-    const known = hasMedia(clipOf(a).file);
-    const current = S.media.find((m) => m.file === clipOf(a).file);
-    const sel = h("button", { class: `sound-pick ${known ? "" : "missing"}`, type: "button", title: "Choose a sound", "aria-label": "Choose sound",
-      onclick: () => openSoundPicker(sel, clipOf(a).file, (file) => { clipOf(a).file = file; changed(); }) },
-      h("span", { class: "sb-emoji" }, known ? clipEmoji(clipOf(a).file) : "⚠"),
-      h("span", { class: "sb-name" }, known ? mediaLabel(current) : `${fileName(clipOf(a).file)} (missing)`),
-      h("span", { class: "sound-pick-caret" }, "▾"));
-    const out = h("output", {}, `${clipOf(a).volume}%`);
-    const vol = h("input", { type: "range", min: 0, max: 100, value: clipOf(a).volume, "aria-label": "Volume",
-      oninput: (e) => { clipOf(a).volume = +e.target.value; out.value = `${clipOf(a).volume}%`; markDirty(); } });
-    const pcBtn = h("button", { class: "btn btn-sm btn-ghost", title: "Play it through the app, like in-game", disabled: !known,
-      onclick: () => api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: clipOf(a).file, volume: clipOf(a).volume }) }).catch((e) => toast(e.message, "err")) }, "🔊 Test");
+    const clips = a.clips;
+    const multi = clips.length > 1;
+    const color = (i) => CLIP_COLOURS[i % CLIP_COLOURS.length];
+
+    // Distribution bar: one segment per clip, drag the handle between two segments to move the odds from one to the other
+    const segs = clips.map((c, i) => h("div", { class: "dist-seg", style: { flexGrow: String(c.probability), background: color(i) } }, h("span", {}, `${c.probability}%`)));
+    const refresh = () => clips.forEach((c, i) => {
+      segs[i].style.flexGrow = String(c.probability);
+      segs[i].firstChild.textContent = `${c.probability}%`;
+      segs[i].classList.toggle("zero", c.probability === 0);
+      pcts[i].value = `${c.probability}%`;
+    });
+    const move = (i, to) => { // boundary between clip i and i+1 so that clip i holds `to`
+      const total = clips[i].probability + clips[i + 1].probability;
+      clips[i].probability = Math.max(0, Math.min(total, to));
+      clips[i + 1].probability = total - clips[i].probability;
+      refresh(); markDirty();
+    };
+    const parts = [];
+    clips.forEach((c, i) => {
+      parts.push(segs[i]);
+      if (i === clips.length - 1) return;
+      const handle = h("div", { class: "dist-handle", role: "slider", tabindex: "0", "aria-label": `Odds between variant ${i + 1} and ${i + 2}`,
+        "aria-valuemin": 0, "aria-valuemax": 100,
+        onkeydown: (e) => {
+          const step = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+          if (step) { e.preventDefault(); move(i, clips[i].probability + (e.shiftKey ? 5 : 1) * step); }
+        },
+        onpointerdown: (e) => {
+          e.preventDefault();
+          handle.setPointerCapture(e.pointerId);
+          const bar = handle.parentElement.getBoundingClientRect();
+          const startX = e.clientX, startP = clips[i].probability;
+          const onMove = (ev) => {
+            let to = startP + Math.round(((ev.clientX - startX) / bar.width) * 100);
+            if (ev.shiftKey) to = Math.round(to / 5) * 5;
+            move(i, to);
+          };
+          const onUp = () => { handle.removeEventListener("pointermove", onMove); handle.removeEventListener("pointerup", onUp); handle.removeEventListener("pointercancel", onUp); };
+          handle.addEventListener("pointermove", onMove);
+          handle.addEventListener("pointerup", onUp);
+          handle.addEventListener("pointercancel", onUp);
+        } });
+      parts.push(handle);
+    });
+    const bar = h("div", { class: "dist-bar", title: "Drag the handles to set how likely each sound is. Hold Shift to snap to 5%." }, parts);
+
+    const pcts = clips.map(() => h("output", { class: "clip-pct" }));
+    const rows = clips.map((c, i) => {
+      const known = hasMedia(c.file);
+      const current = S.media.find((m) => m.file === c.file);
+      const sel = h("button", { class: `sound-pick ${known ? "" : "missing"}`, type: "button", title: "Choose a sound", "aria-label": "Choose sound",
+        onclick: () => openSoundPicker(sel, c.file, (file) => { c.file = file; changed(); }) },
+        h("span", { class: "sb-emoji" }, known ? clipEmoji(c.file) : "⚠"),
+        h("span", { class: "sb-name" }, known ? mediaLabel(current) : `${fileName(c.file)} (missing)`),
+        h("span", { class: "sound-pick-caret" }, "▾"));
+      const out = h("output", {}, `${c.volume}%`);
+      const vol = h("input", { type: "range", min: 0, max: 100, value: c.volume, "aria-label": "Volume",
+        oninput: (e) => { c.volume = +e.target.value; out.value = `${c.volume}%`; markDirty(); } });
+      const test = h("button", { class: "btn btn-sm btn-ghost", title: "Play it through the app, like in-game", disabled: !known,
+        onclick: () => api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: c.file, volume: c.volume }) }).catch((e) => toast(e.message, "err")) }, "🔊");
+      const drop = multi ? h("button", { class: "btn btn-sm btn-ghost btn-danger", title: "Remove this variant", "aria-label": "Remove variant",
+        onclick: () => { // its share goes to the neighbour
+          const give = clips[i - 1] || clips[i + 1];
+          give.probability += c.probability;
+          clips.splice(i, 1); changed();
+        } }, "✕") : null;
+      pcts[i].value = `${c.probability}%`;
+      return h("div", { class: "clip-row" },
+        h("div", { class: "field" },
+          multi ? h("span", { class: "clip-swatch", style: { background: color(i) } }) : null,
+          known ? playButton(c.file, () => c.volume) : h("span", { class: "play missing" }, "!"), sel,
+          multi ? pcts[i] : null, test, drop),
+        h("div", { class: "field" }, h("span", { class: "lbl" }, "Volume"), vol, out),
+        known ? null : h("div", { class: "missing-note" }, "This file isn't in media/ yet. Drop a clip onto this card to add it."));
+    });
+
+    const addVariant = () => { // new variant takes an even share; the others shrink in proportion
+      const share = Math.floor(100 / (clips.length + 1));
+      const rest = 100 - share;
+      const scaled = clips.map((c) => (c.probability * rest) / 100);
+      const floors = scaled.map(Math.floor);
+      let left = rest - floors.reduce((s, v) => s + v, 0);
+      scaled.map((v, i) => [v - floors[i], i]).sort((x, y) => y[0] - x[0]).forEach(([, i]) => { if (left > 0) { floors[i]++; left--; } });
+      clips.forEach((c, i) => { c.probability = floors[i]; });
+      const pick = S.media.find((m) => !clips.some((c) => c.file === m.file)) || S.media[0];
+      clips.push({ file: pick.file, probability: share, volume: clips[clips.length - 1].volume });
+      changed();
+    };
+    const equalize = () => {
+      const base = Math.floor(100 / clips.length), extra = 100 - base * clips.length;
+      clips.forEach((c, i) => { c.probability = base + (i < extra ? 1 : 0); });
+      changed();
+    };
+
     const card = h("div", { class: cls },
-      h("div", { class: "action-head" }, h("span", { class: "kind" }, "♪ Play sound"), pcBtn, enabled, del),
-      h("div", { class: "field" }, known ? playButton(clipOf(a).file, () => clipOf(a).volume) : h("span", { class: "play missing" }, "!"), sel),
-      h("div", { class: "field" }, h("span", { class: "lbl" }, "Volume"), vol, out),
-      known ? null : h("div", { class: "missing-note" }, "This file isn't in media/ yet. Drop a clip onto this card to add it."));
+      h("div", { class: "action-head" }, h("span", { class: "kind" }, multi ? `♪ Play one of ${clips.length} sounds` : "♪ Play sound"), enabled, del),
+      multi ? bar : null,
+      rows,
+      h("div", { class: "add-row" },
+        h("button", { class: "btn btn-sm", disabled: !S.media[0], title: "Add another sound; each time this fires, one is picked at random by the odds above", onclick: addVariant }, "+ Variant"),
+        multi ? h("button", { class: "btn btn-sm btn-ghost", title: "Give every variant the same odds", onclick: equalize }, "Even split") : null));
     makeDropTarget(card, async ([file]) => {
       const path = await uploadFile(file);
-      if (path) { clipOf(a).file = path; a.enabled = true; changed(); }
+      if (!path) return;
+      if (multi) { addVariant(); clips[clips.length - 1].file = path; } else clips[0].file = path;
+      a.enabled = true; changed();
     });
     return card;
   }
