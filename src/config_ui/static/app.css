@@ -706,3 +706,10 @@ label.btn { display: inline-flex; align-items: center; }
 .copy-choice { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .follow-note { margin: 8px 0 0; }
 .invite .share-who > .btn { justify-self: start; }
+
+/* Timers */
+.timer-body .field > .lbl { width: 92px; }
+.timer-body .field input[type=text] { flex: none; width: 120px; }
+.timer-body .field input[type=number] { width: 72px; }
+.timer-preview { display: flex; gap: 8px; margin: 12px 0 4px; padding: 8px 10px; border: 1px dashed var(--gold-lo); border-radius: var(--radius); font-variant-numeric: tabular-nums; }
+.timer-preview .lbl { flex: none; width: 92px; font-size: 12px; color: var(--muted); }

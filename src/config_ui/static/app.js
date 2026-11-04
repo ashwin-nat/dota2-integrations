@@ -44,7 +44,7 @@ const S = {
   media: [],
   catalog: { heroes: [], items: [] },
   tab: "rules",
-  selection: null,    // { kind: "item"|"ability"|"game", key, event? }
+  selection: null,    // { kind: "item"|"ability"|"game"|"timer", key, event? }
   activeEvent: null,
   heroKey: null,
   itemQuery: "",
@@ -55,7 +55,7 @@ const S = {
   maxClip: 5.2,
   clipQuery: "",
   ruleQuery: "",
-  ruleKind: "",       // All rules filters: "" | item | ability | game
+  ruleKind: "",       // All rules filters: "" | item | ability | game | timer
   ruleAction: "",     // "" | play_sound | light | webhook | missing
   ruleSort: "default",
   sharing: null,      // /api/sharing: folder, name, friends' rules and clips
@@ -128,6 +128,7 @@ const monitorTarget = (m) => (m.type === "midas" ? "item_hand_of_midas" : isBlin
 function sameMonitor(a, b) {
   const norm = (m) => (isBlink(m) ? { type: "item", target: "item_blink", event: m.event } : m);
   a = norm(a); b = norm(b);
+  if (a.type === "periodic" || b.type === "periodic") return a.type === b.type && same(timerSchedule(a), timerSchedule(b));
   return a.type === b.type && (a.target || "") === (b.target || "") && a.event === b.event;
 }
 
@@ -185,6 +186,7 @@ function describeTrigger(m) {
     const ab = lookup.abilities.get(m.target);
     return { title: `${ab?.name || m.target} · Cast`, sub: ab ? `${ab.hero.name} · ${m.target}` : m.target, img: abilityImg(m.target), square: true };
   }
+  if (m.type === "periodic") return { title: timerTitle(m), sub: timerWhen(m), glyph: "⏱️" };
   const g = GAME_EVENTS.find((e) => e.type === m.type && e.event === m.event);
   return { title: g?.label || m.event, sub: g?.sub || m.type, img: g?.img, glyph: g?.glyph };
 }
@@ -422,7 +424,7 @@ function render() {
   const scroll = board.scrollTop;
   // The soundboard and Friends tabs don't use the inspector, so they get its width too
   $(".layout").classList.toggle("no-inspector", S.tab === "soundboard" || S.tab === "friends");
-  board.replaceChildren(...[({ rules: renderRules, items: renderItems, heroes: renderHeroes, events: renderEvents, sounds: renderSounds, soundboard: renderSoundboard, friends: renderFriends }[S.tab])()].flat().filter(Boolean));
+  board.replaceChildren(...[({ rules: renderRules, items: renderItems, heroes: renderHeroes, events: renderEvents, timers: renderTimers, sounds: renderSounds, soundboard: renderSoundboard, friends: renderFriends }[S.tab])()].flat().filter(Boolean));
   board.scrollTop = scroll;
   renderInspector();
 }
@@ -445,11 +447,11 @@ function slot({ img, label, cost, cls = "", count = 0, selected, onclick, title 
   return el;
 }
 
-const RULE_KINDS = [["", "All triggers"], ["item", "Items"], ["ability", "Abilities"], ["game", "Game events"]];
+const RULE_KINDS = [["", "All triggers"], ["item", "Items"], ["ability", "Abilities"], ["game", "Game events"], ["timer", "Timers"]];
 const RULE_ACTIONS = [["", "Any action"], ["play_sound", "Plays a sound"], ["light", "Sets a light"], ["webhook", "Calls a webhook"], ["missing", "Missing sound file"]];
 const RULE_SORTS = [["default", "File order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["kind", "Trigger type"], ["actions", "Most actions"]];
 
-const ruleKind = (m) => (["item", "blink", "midas"].includes(m.type) ? "item" : m.type === "ability" ? "ability" : "game");
+const ruleKind = (m) => (["item", "blink", "midas"].includes(m.type) ? "item" : m.type === "ability" ? "ability" : m.type === "periodic" ? "timer" : "game");
 
 function visibleRules() {
   const q = S.ruleQuery.trim().toLowerCase();
@@ -463,7 +465,7 @@ function visibleRules() {
     return text.some((t) => t && t.toLowerCase().includes(q));
   });
   const title = (r) => describeTrigger(r.monitor).title.toLowerCase();
-  const order = { item: 0, ability: 1, game: 2 };
+  const order = { item: 0, ability: 1, game: 2, timer: 3 };
   const sorts = {
     name: (a, b) => title(a).localeCompare(title(b)),
     "name-desc": (a, b) => title(b).localeCompare(title(a)),
@@ -489,34 +491,36 @@ function ruleToolbar() {
     filtered ? h("button", { class: "btn btn-sm", onclick: () => { S.ruleQuery = S.ruleKind = S.ruleAction = ""; render(); } }, "Clear") : null);
 }
 
+function ruleRow(r) {
+  const d = describeTrigger(r.monitor);
+  const acts = r.actions.map((a) => {
+    const off = a.enabled === false ? "off" : "";
+    if (a.type === "play_sound") {
+      const ok = hasMedia(clipOf(a).file);
+      return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: clipOf(a).file },
+        ok ? playButton(clipOf(a).file, () => clipOf(a).volume) : "♪ ", fileName(clipOf(a).file), ` · ${clipOf(a).volume}%`);
+    }
+    if (a.type === "light") return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline");
+    return h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook");
+  });
+  // A div, not a button: the sound chips hold their own preview buttons
+  return h("div", {
+    class: `rule-row ${activeActions(r).length ? "" : "inactive"}`,
+    role: "button", tabindex: "0",
+    onclick: () => jumpTo(r.monitor),
+    onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); jumpTo(r.monitor); } },
+  },
+  h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
+  h("span", { class: "trig" }, h("div", { class: "t" }, d.title), h("div", { class: "s" }, d.sub)),
+  h("span", { class: "acts" }, acts.length ? acts : h("span", { class: "hint" }, "No actions")),
+  h("span", { class: "arrow" }, "›"));
+}
+
 function renderRules() {
   const rules = visibleRules();
   const live = rules.filter((r) => activeActions(r).length);
   const idle = rules.filter((r) => !activeActions(r).length);
-  const row = (r) => {
-    const d = describeTrigger(r.monitor);
-    const acts = r.actions.map((a) => {
-      const off = a.enabled === false ? "off" : "";
-      if (a.type === "play_sound") {
-        const ok = hasMedia(clipOf(a).file);
-        return h("span", { class: `chip ${off} ${ok ? "" : "missing"}`, title: clipOf(a).file },
-          ok ? playButton(clipOf(a).file, () => clipOf(a).volume) : "♪ ", fileName(clipOf(a).file), ` · ${clipOf(a).volume}%`);
-      }
-      if (a.type === "light") return h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline");
-      return h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook");
-    });
-    // A div, not a button: the sound chips hold their own preview buttons
-    return h("div", {
-      class: `rule-row ${activeActions(r).length ? "" : "inactive"}`,
-      role: "button", tabindex: "0",
-      onclick: () => jumpTo(r.monitor),
-      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); jumpTo(r.monitor); } },
-    },
-    h("span", { class: `thumb ${d.square ? "square" : ""}`, style: d.img ? { backgroundImage: `url("${d.img}")` } : null }, d.glyph || ""),
-    h("span", { class: "trig" }, h("div", { class: "t" }, d.title), h("div", { class: "s" }, d.sub)),
-    h("span", { class: "acts" }, acts.length ? acts : h("span", { class: "hint" }, "No actions")),
-    h("span", { class: "arrow" }, "›"));
-  };
+  const row = ruleRow;
   return [
     h("div", { class: "board-head" }, h("h1", {}, "All rules")),
     h("p", { class: "hint" }, "Every trigger that does something. Click one to edit it, or browse Items, Heroes and Game events to add new ones."),
@@ -547,6 +551,9 @@ function jumpTo(monitor) {
     S.tab = "heroes";
     S.heroKey = lookup.abilities.get(monitor.target)?.hero.key || S.heroKey;
     select({ kind: "ability", key: monitor.target, event: monitor.event });
+  } else if (monitor.type === "periodic") {
+    S.tab = "timers";
+    select({ kind: "timer", key: S.config.rules.find((r) => sameMonitor(r.monitor, monitor))?.id });
   } else {
     S.tab = "events";
     select({ kind: "game", key: `${monitor.type}:${monitor.event}` });
@@ -652,6 +659,129 @@ function renderEvents() {
       n ? h("span", { class: "badge" }, `${n} ⚡`) : null);
     })),
   ];
+}
+
+// ---- Timers ----
+// The editor talks in minutes and "seconds before"; rules.json holds period / offset / min_time / max_time.
+
+const TIMER_IDEAS = [
+  { glyph: "💰", label: "Bounty runes", sub: "Every 3 min, 20 s before", m: { period: 180, offset: -20 } },
+  { glyph: "⚡", label: "Power runes", sub: "Every 2 min from 5:00, 15 s before", m: { period: 120, offset: -15, min_time: 300 } },
+  { glyph: "📖", label: "Wisdom runes", sub: "Every 7 min from 6:00, 20 s before", m: { period: 420, offset: -20, min_time: 360 } },
+  { glyph: "🏕️", label: "Stack camps", sub: "Every minute, 7 s before", m: { period: 60, offset: -7 } },
+];
+
+const timerSchedule = (m) => ({ period: m.period, offset: m.offset ?? 0, min_time: m.min_time ?? null, max_time: m.max_time ?? null });
+
+const fmtClock = (sec) => `${sec < 0 ? "-" : ""}${Math.floor(Math.abs(sec) / 60)}:${String(Math.abs(sec) % 60).padStart(2, "0")}`;
+const fmtEvery = (sec) => (sec % 60 === 0 ? `${sec / 60} min` : sec < 60 ? `${sec} s` : `${Math.floor(sec / 60)} min ${sec % 60} s`);
+
+// "5" -> 5:00, "5:30" -> 5:30, "" -> null (no limit), anything else -> undefined (invalid)
+function parseClock(text) {
+  text = text.trim();
+  if (!text) return null;
+  let m = /^(\d+)$/.exec(text);
+  if (m) return +m[1] * 60;
+  m = /^(\d+):([0-5]\d)$/.exec(text);
+  return m ? +m[1] * 60 + +m[2] : undefined;
+}
+
+function timerTitle(m) {
+  const off = m.offset ?? 0;
+  return `Every ${fmtEvery(m.period)}${off ? `, ${Math.abs(off)} s ${off < 0 ? "before" : "after"}` : ""}`;
+}
+
+function timerWhen(m) {
+  if (m.min_time != null && m.max_time != null) return `From ${fmtClock(m.min_time)} to ${fmtClock(m.max_time)}`;
+  if (m.min_time != null) return `From ${fmtClock(m.min_time)} on`;
+  if (m.max_time != null) return `Until ${fmtClock(m.max_time)}`;
+  return "The whole game";
+}
+
+// The first few times (on the game clock) this timer plays
+function timerTimes(m, count = 5) {
+  const lo = Math.max(0, m.min_time ?? 0), off = m.offset ?? 0, out = [];
+  for (let t = lo + ((((off - lo) % m.period) + m.period) % m.period); out.length < count && (m.max_time == null || t <= m.max_time); t += m.period) out.push(t);
+  return out;
+}
+
+function newTimer(m) {
+  let n = 1;
+  while (S.config.rules.some((r) => r.id === `timer_${n}`)) n++;
+  const rule = { id: `timer_${n}`, monitor: { type: "periodic", period: 60, offset: 0, min_time: null, max_time: null, ...m }, actions: [] };
+  S.config.rules.push(rule);
+  S.newRuleIds.add(rule.id);
+  markDirty();
+  S.tab = "timers";
+  select({ kind: "timer", key: rule.id });
+}
+
+function renderTimers() {
+  const timers = S.config.rules.filter((r) => r.monitor.type === "periodic");
+  return [
+    h("div", { class: "board-head" }, h("h1", {}, "Timers"), h("button", { class: "btn btn-gold", onclick: () => newTimer({}) }, "+ New timer")),
+    h("p", { class: "hint" }, "Play a sound on a schedule, by the game clock. Handy for reminders like \"runes spawn soon\". Pick a quick start, or make your own."),
+    h("div", { class: "section-title" }, "Quick starts"),
+    h("div", { class: "event-grid" }, TIMER_IDEAS.map((i) => h("button", { class: "event-card", onclick: () => newTimer(i.m) },
+      h("span", { class: "glyph" }, i.glyph),
+      h("span", {}, h("div", { class: "t" }, i.label), h("div", { class: "s" }, i.sub))))),
+    h("div", { class: "section-title" }, "Your timers", h("span", { class: "count" }, timers.length)),
+    timers.length ? h("div", { class: "rule-list" }, timers.map(ruleRow)) : h("p", { class: "hint" }, "No timers yet."),
+  ];
+}
+
+function renderTimerInspector(insp, rule) {
+  if (!rule) { S.selection = null; renderInspector(); return; }
+  const m = rule.monitor;
+  const changed = () => { markDirty(); render(); };
+  const unit = S.timerUnits?.[rule.id] || (m.period % 60 === 0 ? "min" : "sec");
+  const perUnit = unit === "min" ? 60 : 1;
+
+  const every = h("input", { type: "number", min: 1, step: "any", value: m.period / perUnit, "aria-label": "Repeat every",
+    onchange: (e) => { m.period = Math.max(1, Math.round(+e.target.value * perUnit) || m.period); changed(); } });
+  const unitSel = h("select", { "aria-label": "Unit", onchange: (e) => { (S.timerUnits ||= {})[rule.id] = e.target.value; render(); } },
+    [["min", "minutes"], ["sec", "seconds"]].map(([v, t]) => h("option", { value: v, selected: unit === v }, t)));
+
+  const off = m.offset ?? 0;
+  const secs = h("input", { type: "number", min: 0, max: 59, value: Math.abs(off), "aria-label": "Seconds",
+    onchange: (e) => { const v = Math.min(59, Math.max(0, Math.round(+e.target.value) || 0)); m.offset = off > 0 ? v : -v; changed(); } });
+  const when = h("select", { "aria-label": "Before or after", disabled: !off, onchange: (e) => { m.offset = (e.target.value === "before" ? -1 : 1) * Math.abs(off); changed(); } },
+    [["before", "before"], ["after", "after"]].map(([v, t]) => h("option", { value: v, selected: (off <= 0 ? "before" : "after") === v }, t)));
+
+  const clockField = (label, key, placeholder) => h("div", { class: "field" }, h("span", { class: "lbl" }, label),
+    h("input", { type: "text", value: m[key] == null ? "" : fmtClock(m[key]), placeholder, "aria-label": label,
+      onchange: (e) => {
+        const v = parseClock(e.target.value);
+        const other = key === "min_time" ? m.max_time : m.min_time;
+        if (v === undefined) toast("Type a time like 5 or 5:30.", "err");
+        else if (v != null && other != null && (key === "min_time" ? v > other : v < other)) toast("The start has to come before the end.", "err");
+        else m[key] = v;
+        changed();
+      } }));
+
+  const times = timerTimes(m);
+  const preview = times.length ? `${times.map(fmtClock).join(" · ")} …` : "Never, with these settings.";
+  const add = (action) => { rule.actions.push(action); changed(); };
+
+  insp.replaceChildren(
+    h("div", { class: "insp-head" },
+      h("div", { class: "insp-icon" }, "⏱️"),
+      h("div", {}, h("h2", {}, timerTitle(m)), h("code", {}, timerWhen(m)))),
+    h("div", { class: "event-body timer-body" },
+      h("div", { class: "field" }, h("span", { class: "lbl" }, "Repeat every"), every, unitSel),
+      h("div", { class: "field", title: "Marks are every interval on the game clock, starting at 0:00. Pick how early (or late) to play." },
+        h("span", { class: "lbl" }, "Play it"), secs, h("span", { class: "hint" }, "s"), when, h("span", { class: "hint" }, "each mark")),
+      clockField("Start at", "min_time", "game start"),
+      clockField("Stop after", "max_time", "never"),
+      h("div", { class: "timer-preview" }, h("span", { class: "lbl" }, "Plays at"), h("span", {}, preview)),
+      h("p", { class: "hint" }, "Times are the in-game clock. Leave Start and Stop empty to run all game."),
+      rule.actions.length ? rule.actions.map((a) => renderAction(rule, a, m, changed)) : h("p", { class: "hint" }, "Nothing plays yet. Add a sound:"),
+      h("div", { class: "add-row" }, addSoundButton(add),
+        h("button", { class: "btn btn-sm btn-ghost btn-danger", onclick: () => {
+          S.config.rules.splice(S.config.rules.indexOf(rule), 1);
+          S.selection = null;
+          changed();
+        } }, "Delete timer"))));
 }
 
 function renderSounds() {
@@ -1609,9 +1739,11 @@ function renderInspector() {
   if (!sel) {
     insp.replaceChildren(h("div", { class: "inspector-empty" },
       h("div", { class: "inspector-empty-glyph" }, "◈"),
-      h("p", {}, "Pick an item, ability or game event to choose what happens when it triggers.")));
+      h("p", {}, "Pick an item, ability, game event or timer to choose what happens when it triggers.")));
     return;
   }
+
+  if (sel.kind === "timer") return renderTimerInspector(insp, S.config.rules.find((r) => r.id === sel.key));
 
   let head, events, warn;
   if (sel.kind === "item") {
@@ -1652,6 +1784,8 @@ function renderInspector() {
   ].filter(Boolean));
 }
 
+const addSoundButton = (add) => h("button", { class: "btn btn-sm", disabled: !S.media[0], onclick: () => add({ type: "play_sound", enabled: true, clips: [{ file: S.media[0].file, probability: 100, volume: 50 }] }) }, "+ Sound");
+
 function renderEventBody(ev) {
   const monitor = ev.monitor;
   const rules = rulesFor(monitor);
@@ -1659,13 +1793,12 @@ function renderEventBody(ev) {
   const changed = () => { markDirty(); render(); };
 
   const add = (action) => { ensureRule(monitor).actions.push(action); changed(); };
-  const firstSound = S.media[0]?.file;
 
   return h("div", { class: "event-body" },
     h("p", { class: "event-desc" }, ev.desc),
     actions.length ? actions.map(({ rule, action }) => renderAction(rule, action, monitor, changed)) : h("p", { class: "hint" }, "Nothing happens yet. Add a sound or a light:"),
     h("div", { class: "add-row" },
-      h("button", { class: "btn btn-sm", disabled: !firstSound, onclick: () => add({ type: "play_sound", enabled: true, clips: [{ file: firstSound, probability: 100, volume: 50 }] }) }, "+ Sound"),
+      addSoundButton(add),
       h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, "+ Light"),
       h("button", { class: "btn btn-sm btn-ghost", onclick: () => add({ type: "webhook", enabled: true, url: "https://", api_key: null, auth_type: null, timeout: 2, cooldown: 0 }) }, "+ Webhook")),
   );

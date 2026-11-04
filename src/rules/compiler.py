@@ -77,10 +77,12 @@ def _compile_ability(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: Rule
     compiled.ability_monitors.append(ABILITY_MONITOR_REGISTRY[m.event](m.target, m.event_key, bus))
 
 
-def _compile_periodic(_: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEventBus, ctx: EventContext, compiled: CompiledRules) -> None:
+def _compile_periodic(rule: Rule, m: AnyMonitor, actions: list[AnyAction], bus: RuleEventBus, ctx: EventContext, compiled: CompiledRules) -> None:
     assert isinstance(m, PeriodicMonitorConfig)
-    bus.register(m.event_key, actions, ctx)
-    compiled.periodic_monitors.append(PeriodicMonitor(m.period, m.offset, m.event_key, bus, m.min_time, m.max_time))
+    # Per rule, so two timers with the same schedule each fire their own actions once
+    key = f"{m.event_key}{rule.id}__"
+    bus.register(key, actions, ctx)
+    compiled.periodic_monitors.append(PeriodicMonitor(m.period, m.offset, key, bus, m.min_time, m.max_time))
 
 
 _MONITOR_HANDLERS: dict[MonitorType, _MonitorHandler] = {
