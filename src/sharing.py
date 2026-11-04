@@ -379,15 +379,17 @@ def followed_rules(own_rules: list[Rule]) -> list[Rule]:
             name = key
         if not data:
             continue
+        claimed: set[str] = set()  # added to `taken` only after this source, so its own rules on one trigger all stay
         for raw in data.get("rules", []):
             sounds = [a for a in raw.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND and a.get("enabled", True)]
             if not sounds or _trigger(raw.get("monitor")) in taken:
                 continue
-            taken.add(_trigger(raw.get("monitor")))
+            claimed.add(_trigger(raw.get("monitor")))
             try:
                 out.append(Rule.model_validate({"id": f"{name}/{raw.get('id')}", "monitor": raw.get("monitor"), "actions": sounds}))
             except ValidationError as e:
                 logger.warning(f"Skipping {name}'s rule {raw.get('id')!r}: " + "; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors()))
+        taken |= claimed
     return out
 
 
