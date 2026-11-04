@@ -992,6 +992,7 @@ function openClipEditor({ clip, file } = {}) {
   const onResize = () => redraws.forEach((f) => f());
   const close = () => {
     stopPreview();
+    if (recorder) { recorder.onstop = null; recorder.stream.getTracks().forEach((t) => t.stop()); recorder.stop(); recorder = null; }
     ctx?.close();
     backdrop.remove();
     document.removeEventListener("keydown", onKey);
@@ -1029,9 +1030,38 @@ function openClipEditor({ clip, file } = {}) {
     const link = h("input", { type: "url", placeholder: "https://www.youtube.com/watch?v=…", "aria-label": "Video link" });
     const fetchBtn = h("button", { class: "btn", onclick: () => fetchLink(link.value, fetchBtn) }, "Get audio");
     link.addEventListener("keydown", (e) => { if (e.key === "Enter") fetchBtn.click(); });
+    const recBtn = h("button", { class: "btn", onclick: () => recordMic(recBtn) }, "🎙 Record with microphone");
     source.replaceChildren(zone, h("div", { class: "sb-or" }, "or paste a link"), h("div", { class: "sb-link" }, link, fetchBtn),
-      h("p", { class: "hint" }, "YouTube, Twitch clips, TikTok, X and most other video sites work."));
+      h("p", { class: "hint" }, "YouTube, Twitch clips, TikTok, X and most other video sites work."),
+      h("div", { class: "sb-or" }, "or record yourself"), h("div", { class: "sb-link" }, recBtn));
     setTimeout(() => link.focus());
+  }
+
+  let recorder = null;
+  async function recordMic(btn) {
+    if (recorder) { recorder.stop(); return; }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      toast(`Couldn't use the microphone: ${e.message || e.name}`, "err", 6000);
+      return;
+    }
+    const chunks = [];
+    const rec = new MediaRecorder(stream);
+    recorder = rec;
+    const t0 = Date.now();
+    const tick = setInterval(() => { btn.textContent = `⏹ Stop (${((Date.now() - t0) / 1000).toFixed(1)} s)`; }, 100);
+    btn.textContent = "⏹ Stop (0.0 s)";
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = async () => {
+      clearInterval(tick);
+      stream.getTracks().forEach((t) => t.stop());
+      recorder = null;
+      if (!chunks.length) { btn.textContent = "🎙 Record with microphone"; return; }
+      await loadFile(new File([new Blob(chunks, { type: rec.mimeType })], "Recording"));
+    };
+    rec.start();
   }
 
   async function fetchLink(url, btn) {
