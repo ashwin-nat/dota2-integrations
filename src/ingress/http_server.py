@@ -4,7 +4,6 @@ import logging
 from aiohttp import web
 
 from src.recorder import Recorder
-from src.rules.bus import RuleEventBus
 from src.state.store import GameState
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ async def serve(
     queue: asyncio.Queue,
     recorder: Recorder | None = None,
     state: GameState | None = None,
-    rule_bus: RuleEventBus | None = None,
 ) -> None:
     app = web.Application()
 
@@ -41,7 +39,7 @@ async def serve(
 
     app.router.add_post("/", _handle)
 
-    if state is not None and rule_bus is not None:
+    if state is not None:
         async def _state(request: web.Request) -> web.Response:
             # Wait until every queued payload has been processed so the dump is
             # deterministic right after a POST (the replay stepper relies on this).
@@ -49,7 +47,7 @@ async def serve(
             return web.json_response({
                 "version": state.version(),
                 "raw": state.raw,
-                "fired": rule_bus.drain_fired(),
+                "events": state.events(),
             })
 
         app.router.add_get("/state", _state)

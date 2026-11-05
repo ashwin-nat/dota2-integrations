@@ -13,13 +13,14 @@ from pydantic import ValidationError
 RULES_PATH = Path("rules.json")
 
 from src.ingress.http_server import serve
-from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
+from src.lighting.arbiter import LightingArbiter
 from src.log_setup import setup_logging
 from src.recorder import Recorder
-from src.rules import compile_rules, RulesConfig
-from src.rules.action_executor import ActionExecutor
-from src.rules.bus import RuleEventBus
+from src.rules import RulesConfig, compile_rules
+from src.rules.actions import (ActionExecutor, LightExecutor, SoundExecutor,
+                               WebhookExecutor)
+from src.rules.bus import EventBus
 from src.sound import SoundManager
 from src.state.store import GameState
 
@@ -41,7 +42,10 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     loop.default_exception_handler(context)
 
 
-async def main(record: bool = False) -> None:
+DEBUG_EVENT_HISTORY = 100
+
+
+async def main(record: bool = False, debug: bool = False) -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
     try:
@@ -58,16 +62,13 @@ async def main(record: bool = False) -> None:
 
     # --- Rule engine setup ---
     sound = SoundManager(default_volume=rules_config.sound.volume / 100)
-    executor = ActionExecutor(sound)
     arbiter = LightingArbiter(lighting)
-    rule_bus = RuleEventBus(arbiter)
-    compiled = compile_rules(rules_config.rules, rule_bus)
-    state = GameState(compiled, rule_bus, arbiter)
-    n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors) + \
-                    len(compiled.ability_monitors) + len(compiled.periodic_monitors)
-    logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, "
-                f"{len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero, "
-                f"{len(compiled.ability_monitors)} ability)")
+    executors: list[ActionExecutor] = [LightExecutor(arbiter), SoundExecutor(sound), WebhookExecutor()]
+    bus = EventBus(history_size=DEBUG_EVENT_HISTORY if debug else 0)
+    compiled = compile_rules(rules_config.rules, bus, {e.action_type: e for e in executors})
+    state = GameState(compiled, bus, arbiter)
+    counts = ", ".join(f"{n} {t}" for t, n in compiled.counts().items())
+    logger.info(f"Rule engine ready: {len(compiled.monitors)} monitors ({counts})")
     # -------------------------
 
     async def ingest() -> None:
@@ -93,9 +94,10 @@ async def main(record: bool = False) -> None:
         asyncio.create_task(arbiter.run(), name="lighting"),
         *[
             asyncio.create_task(coro, name=name)
-            for name, coro in executor.worker_coroutines(rule_bus).items()
+            for executor in executors
+            for name, coro in executor.workers().items()
         ],
-        asyncio.create_task(serve(queue, recorder, state, rule_bus), name="http_server"),
+        asyncio.create_task(serve(queue, recorder, state), name="http_server"),
     ]
 
     for task in tasks:
@@ -114,7 +116,8 @@ def _enter_macos_app_dir() -> None:
 if __name__ == "__main__":
     _enter_macos_app_dir()
     parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true", help="keep recent rule events in memory so /state (and the replay stepper) can show them")
     parser.add_argument("--record", action="store_true", help="keep incoming payloads in memory; /record/save writes them to recordings/*.jsonl")
     args = parser.parse_args()
     setup_logging()
-    asyncio.run(main(record=args.record))
+    asyncio.run(main(record=args.record, debug=args.debug))

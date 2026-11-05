@@ -31,14 +31,17 @@ src/
 ├── ingress/
 │   └── http_server.py   # POST / handler, pushes payloads onto an asyncio.Queue
 ├── state/
-│   ├── store.py         # GameState — parses payloads, runs rule monitors
-│   ├── items.py / map.py / hero.py / player.py   # typed parsers
+│   ├── store.py         # GameState — parses payloads, builds a StateSnapshot, runs the monitors
+│   ├── items.py / abilities.py / map.py / hero.py / player.py   # typed parsers
 ├── rules/
-│   ├── config.py        # pydantic models for rules.json
-│   ├── compiler.py      # compile_rules() -> CompiledRules
-│   ├── bus.py           # RuleEventBus + EventContext
-│   ├── action_executor.py
-│   ├── monitor_base.py / item_monitors.py / map_monitor.py / hero_monitor.py
+│   ├── config.py        # pydantic models for rules.json (rules, actions, AnyMonitor union)
+│   ├── monitor_config.py  # MonitorType, MonitorConfig base (build)
+│   ├── compiler.py      # compile_rules() -> CompiledRules (one monitor per rule)
+│   ├── bus.py           # EventBus (topic router), Event, EventType
+│   ├── monitor_base.py  # StateSnapshot, Monitor, StatefulMonitor
+│   ├── item_monitors.py / ability_monitors.py / map_monitor.py / hero_monitor.py / periodic_monitor.py
+│   │                    # each holds the monitor's config model and the monitor class
+│   └── actions/         # ActionBinding + LightExecutor / SoundExecutor / WebhookExecutor
 ├── lighting/            # LightingArbiter + vendor drivers (tapo, tuya, log)
 └── sound/               # SoundManager
 ```
@@ -50,13 +53,16 @@ src/
 ```text
 Dota 2 ──POST──► http_server ──queue──► ingest task ──► GameState.update(data)
                                                             │
-                                                            ├─ parse items / map / hero / player
-                                                            ├─ rule_bus.set_time(game_time, clock_time)
-                                                            ├─ run monitors ──► rule_bus.emit(event_key)
+                                                            ├─ parse items / abilities / map / hero / player
+                                                            ├─ bus.game_time / bus.clock_time = ...
+                                                            ├─ compiled.evaluate_all(StateSnapshot) ──► bus.emit / bus.retract(key)
                                                             └─ light_arbiter.commit()
 
-rule_bus.emit ──► light actions  → LightingArbiter (synchronous)
-              └─► other actions  → per-type queue → ActionExecutor worker
+bus.emit(key)    ──► subscribed executors, in order:
+                       LightExecutor    → LightingArbiter.set   (synchronous)
+                       SoundExecutor    → its queue → worker (burst drop)
+                       WebhookExecutor  → its queue → worker (cooldown, POST in a task)
+bus.retract(key) ──► LightExecutor → LightingArbiter.clear; sound and webhook ignore it
 ```
 
 ---
@@ -67,7 +73,7 @@ rule_bus.emit ──► light actions  → LightingArbiter (synchronous)
 
 ```python
 class GameState:
-    def __init__(self, compiled_rules: CompiledRules, rule_bus: RuleEventBus, light_arbiter: LightingArbiter): ...
+    def __init__(self, compiled_rules: CompiledRules, bus: EventBus, light_arbiter: LightingArbiter): ...
 
     def update(self, data: dict) -> None: ...   # parse payload, run monitors
     def version(self) -> int: ...                # increments on every update
@@ -81,10 +87,11 @@ class GameState:
 All dependencies are required constructor args, wired once at startup in `main.py`:
 
 ```python
-arbiter = LightingArbiter(lighting)
-rule_bus = RuleEventBus(arbiter)
-compiled = compile_rules(rules_config.rules, rule_bus)
-state = GameState(compiled, rule_bus, arbiter)
+arbiter   = LightingArbiter(lighting)
+executors = [LightExecutor(arbiter), SoundExecutor(sound), WebhookExecutor()]
+bus       = EventBus()
+compiled  = compile_rules(rules_config.rules, bus, {e.action_type: e for e in executors})
+state     = GameState(compiled, bus, arbiter)
 ```
 
 ### Update semantics
@@ -92,26 +99,24 @@ state = GameState(compiled, rule_bus, arbiter)
 * Updates without a `map` section, or where `map.game_state` is not `DOTA_GAMERULES_STATE_GAME_IN_PROGRESS`, are ignored.
 * Otherwise each section is re-parsed and **replaces** the previous value (latest snapshot wins, no merging).
 * A change in `map.matchid` clears all monitor state and lighting requests.
-* `update()` is synchronous and must stay CPU-only. Anything I/O-bound (sound, lights, HTTP) goes through `RuleEventBus` and runs asynchronously.
+* `update()` is synchronous and must stay CPU-only. Anything I/O-bound (sound, lights, HTTP) goes through the `EventBus` to an executor and runs asynchronously.
 
 ---
 
 ## Rule Events
 
-Monitors call `bus.emit(event_key)`. The bus attaches an `EventContext` to every action it dispatches:
+Monitors call `bus.emit(key)` when a state begins (or a one-off event happens) and `bus.retract(key)` when a state they signalled ends. The bus stamps the current game and clock time and calls every handler subscribed to that key:
 
 ```python
-@dataclass
-class EventContext:
-    rule_id: str
-    monitor_type: MonitorType
-    event_name: str
-    data: dict[str, Any]
-    game_time: int | None    # stamped from map state at fire time
+@dataclass(frozen=True)
+class Event:
+    key: str
+    type: EventType          # STARTED or ENDED
+    game_time: int | None    # stamped from map state at publish time
     clock_time: int | None
 ```
 
-`ActionExecutor` logs the context before executing each action. Light actions never reach the executor, so the bus logs them directly.
+At compile time every enabled action is stored as an `ActionBinding` (`rule_id`, `monitor_type`, `event_name`, `action`) on the executor for its type, and each executor subscribes to the keys it holds. The executor logs the owning rule plus the event times before running an action, so the `rule_id` in the log is always the rule that owns the action. Each rule publishes under its own key (its id; config validation rejects duplicate ids), so each key has one rule and every action runs once, even when several rules watch the same trigger.
 
 ---
 

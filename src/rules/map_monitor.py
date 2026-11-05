@@ -1,26 +1,41 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Literal
+
+from src.rules.monitor_base import Monitor, StateSnapshot
+from src.rules.monitor_config import MonitorConfig, MonitorType
 
 if TYPE_CHECKING:
-    from src.rules.bus import RuleEventBus
-    from src.state.map import MapState
+    from src.rules.bus import EventBus
 
 
-class MapMonitor:
-    """Watches map state transitions and emits rule-bus events.
+class MapMonitorConfig(MonitorConfig):
+    type: Literal[MonitorType.MAP]
+    event: Literal["DAYTIME_STARTED", "NIGHTTIME_STARTED", "PAUSED", "UNPAUSED"]
+
+    takes_light_priority: ClassVar[bool] = False  # map rules are the baseline colour
+
+    def _create(self, bus: EventBus, key: str) -> MapMonitor:
+        return MapMonitor(self.event, key, bus)
+
+
+class MapMonitor(Monitor):
+    """Watches map state transitions and emits events.
 
     Each instance handles one map-level event type.
     """
 
-    def __init__(self, event: str, event_key: str, bus: RuleEventBus) -> None:
+    def __init__(self, event: str, event_key: str, bus: EventBus) -> None:
         self._event = event
         self._event_key = event_key
         self._bus = bus
         self._prev_daytime: bool | None = None
         self._prev_paused: bool | None = None
 
-    def evaluate(self, map_state: MapState) -> None:
+    def evaluate(self, snap: StateSnapshot) -> None:
+        map_state = snap.map
+        if map_state is None:
+            return
         daytime = map_state.daytime
         paused = map_state.paused
 

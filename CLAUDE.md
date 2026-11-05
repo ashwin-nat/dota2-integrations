@@ -18,6 +18,8 @@ Dota 2 GSI (Game State Integration) receiver. Accepts raw POST payloads from the
 uv run python -m src.main
 ```
 
+Tests: `uv run pytest`.
+
 Listens on `http://127.0.0.1:6969`. Dota 2 sends POST requests to `/`.
 
 Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto-created on first run) and an optional `rules.json` in the project root.
@@ -27,32 +29,36 @@ Requires `lighting_config_{vendor}.json` (e.g. `lighting_config_tapo.json`, auto
 ```
 src/
 ├── main.py                    # entry point — wires all subsystems, runs asyncio tasks
+├── log_setup.py               # stdout + rotating file logging
+├── recorder.py                # Recorder — keeps payloads in memory for --record, saves JSONL
 ├── ingress/
 │   └── http_server.py         # POST / handler (logs and strips a top-level `note` field if present), GET /state debug dump, /record/save in record mode
 ├── state/
-│   ├── store.py               # GameState — snapshot store, drives rule monitors on every update
+│   ├── store.py               # GameState — snapshot store; builds a StateSnapshot per update and runs every monitor
 │   ├── items.py               # Items / item type parsing (EmptyItem, NoChargeItem, SingleChargeItem, MultiChargeItem)
 │   ├── abilities.py           # Abilities / Ability — one dataclass for every ability slot
-│   └── map.py                 # MapState parsing
-├── events/
-│   ├── bus.py                 # EventBus — async fan-out bus for internal events
-│   └── codes.py               # EventCode enum
+│   ├── map.py / hero.py / player.py   # typed parsers
 ├── rules/
-│   ├── config.py              # Pydantic models: Rule, AnyMonitor, AnyAction, RulesConfig
-│   ├── compiler.py            # compile_rules() — builds CompiledRules from RulesConfig
-│   ├── bus.py                 # RuleEventBus — string-key async queue bus for rule events
-│   ├── action_executor.py     # ActionExecutor — dispatches typed actions to sound/lighting
-│   ├── item_monitors.py       # ItemMonitor subclasses + ITEM_MONITOR_REGISTRY / MIDAS_MONITOR_REGISTRY
-│   ├── ability_monitors.py    # AbilityMonitor + ABILITY_MONITOR_REGISTRY (cooldown-started tracking)
-│   └── map_monitor.py         # MapMonitor — day/night cycle transition detector
-├── recorder.py                # Recorder — keeps payloads in memory for --record, saves JSONL
-├── monitors/
-│   ├── base.py                # Monitor ABC
-│   └── day_night.py           # Legacy day/night monitor (pre-rule-engine)
-├── lighting/
-│   └── controller.py          # LightingController — Philips Hue RGB control
+│   ├── config.py              # Pydantic models: Rule, RulesConfig, actions, and the AnyMonitor union (the one list of monitor configs)
+│   ├── monitor_config.py      # MonitorType, MonitorConfig base (_create(bus, key), takes_light_priority; build(bus, key) wraps _create and tags the monitor's type)
+│   ├── compiler.py            # compile_rules() — one monitor per rule, binds actions to executors; CompiledRules
+│   ├── bus.py                 # EventBus — synchronous topic router; Event, EventType
+│   ├── monitor_base.py        # StateSnapshot, Monitor ABC, StatefulMonitor (_fire / _end)
+│   ├── item_monitors.py       # item / midas / blink configs + monitors + registries
+│   ├── ability_monitors.py    # ability config + monitor (cooldown-started tracking)
+│   ├── map_monitor.py         # map config + monitor (day/night, pause)
+│   ├── hero_monitor.py        # hero config + monitor (killed / respawned)
+│   ├── periodic_monitor.py    # periodic config + monitor (game-clock ticks)
+│   └── actions/
+│       ├── base.py            # ActionBinding, ActionExecutor ABC
+│       ├── light.py           # LightExecutor — sets/clears LightingArbiter requests
+│       ├── sound.py           # SoundExecutor — queue + worker, burst drop
+│       └── webhook.py         # WebhookExecutor — queue + worker, cooldown
+├── lighting/                  # LightingArbiter, LightingController, vendor drivers (tapo, tuya, log)
 └── sound/
     └── manager.py             # SoundManager — async audio playback
+tests/                         # pytest
+tools/replay.py                # replay / step through recordings
 ```
 
 ## Key Design Decisions
@@ -60,15 +66,18 @@ src/
 - **No schema assumptions on raw state** — GSI payload is stored as an opaque `dict`; typed state (`Items`, `MapState`) is parsed alongside it.
 - **Latest snapshot wins** — each `state.update(data)` fully replaces the previous state.
 - **Transport-agnostic state layer** — `GameState` has no aiohttp dependency.
-- **Type-safe handler injection** — HTTP handler receives `EventBus` as a bound arg, emits `INCOMING_DATA`; `GameState` subscribes to that event.
-- **No locks** — single writer (HTTP handler via event bus), multiple readers allowed.
-- **Rule engine is compiled at startup** — `compile_rules()` parses `rules.json` once into `CompiledRules` (lists of monitor instances pre-wired to `RuleEventBus`). No runtime routing logic.
-- **Two async buses** — `EventBus` for internal infrastructure events; `RuleEventBus` for string-key rule events dispatched to `ActionExecutor`.
+- **Queue handoff** — the HTTP handler only pushes payloads onto an `asyncio.Queue`; the `ingest` task is the single writer that calls `state.update()`.
+- **No locks** — single writer (the ingest task), multiple readers allowed.
+- **Rule engine is compiled at startup** — `compile_rules()` builds one monitor per rule and registers each enabled action on its executor. No runtime routing logic.
+- **The bus is a plain topic router** — `EventBus` is synchronous publish/subscribe: a monitor `emit`s (STARTED) or `retract`s (ENDED) an event key, and the executors subscribed to that key handle it, in subscription order. A handler that raises is logged and does not stop the others. The bus knows nothing about actions.
+- **Executors own their action type** — `LightExecutor` sets lights on the arbiter synchronously (the arbiter commits once per update); `SoundExecutor` and `WebhookExecutor` put work on their own queue, drained by async workers (`workers()`), so `update()` never does I/O.
+- **One monitor per rule, keyed by rule id** — each rule publishes under its own bus key (its id; config validation rejects duplicate ids), so two rules on the same trigger just get separate monitors and every action runs once. The compiler also accepts rules that never went through `RulesConfig` (e.g. followed friends' rules), as long as their ids are unique.
+- **Monitors are self-contained** — each monitor module holds its config model (with `_create(bus)`) and its monitor class. All monitors take one `StateSnapshot` (`items`, `prev_items`, `abilities`, `hero`, `player`, `map`) and return early if the part they need is missing.
 
 ## State API (`src/state/store.py`)
 
 ```python
-GameState(compiled_rules, rule_bus, light_arbiter)  # all required, wired once at startup
+GameState(compiled_rules, bus, light_arbiter)  # all required, wired once at startup
 state.update(data)               # -> None              replace snapshot, run rule monitors
 state.version()                  # -> int               monotonic counter, increments on every set
 state.items                      # -> Items | None       parsed item slots
@@ -133,7 +142,11 @@ Ability monitors follow an ability that transforms in place (Centaur's `centaur_
 
 ## Record, replay and debugging
 
-`uv run python -m src.main --record` keeps every payload in memory; `GET /record/save` writes `recordings/gsi_*.jsonl` (`{"ts", "data"}` per line, optional `"note"`). `tools/replay.py <file>` POSTs a recording to a running app (`--speed`, `--instant`), and `--step` is an interactive stepper (next N frames, run to next change, diff, state dump, fired rules, `note` to annotate). Notes live in `<file>.notes.json` keyed by `ts` and are injected into the POSTed JSON as a top-level `note`, which the app logs and strips. `GET /state` returns `{version, raw, fired}` after draining the ingest queue; `GameState.raw` and `RuleEventBus.drain_fired()` exist for it. See the `dota-replay` skill (`.agents/skills/dota-replay/`) for the workflow. When a monitor misbehaves, reproduce it from a recording and inspect the per-frame diff first; the skill has a debugging checklist. Rules with no enabled actions are skipped at compile time, so use a harmless action (e.g. a light) when reproducing a bug.
+`uv run python -m src.main --record` keeps every payload in memory; `GET /record/save` writes `recordings/gsi_*.jsonl` (`{"ts", "data"}` per line, optional `"note"`). `tools/replay.py <file>` POSTs a recording to a running app (`--speed`, `--instant`), and `--step` is an interactive stepper (start the app with `--debug` to see fired events) (next N frames, run to next change, diff, state dump, `note` to annotate). Notes live in `<file>.notes.json` keyed by `ts` and are injected into the POSTed JSON as a top-level `note`, which the app logs and strips. `GET /state` returns `{version, raw, events}` after draining the ingest queue (`events` = bus `published` count plus, only when started with `--debug`, the last 100 events; the stepper's `c` stops on new ones and prints them as `FIRED`). Rule ids are not in events; for those check `logs/dota2-integrations.log` for `rule='<id>' ... ->` lines. See the `dota-replay` skill (`.agents/skills/dota-replay/`) for the workflow. When a monitor misbehaves, reproduce it from a recording and inspect the per-frame diff first; the skill has a debugging checklist. Rules with no enabled actions are skipped at compile time, so use a harmless action (e.g. a light) when reproducing a bug.
+
+## Adding a monitor
+
+One new module with the monitor's config model (a `MonitorConfig` subclass: `type`, fields, `_create(bus, key)`, and `takes_light_priority = False` if its lights are the baseline) and its monitor class (`Monitor`, `StatefulMonitor` or `TargetedStatefulMonitor`, `evaluate(snap)` + `clear()`). Then add its `MonitorType` value in `monitor_config.py` and its config class to the `AnyMonitor` union in `config.py`. Nothing else changes: the compiler calls `rule.monitor.build(bus, rule.id)`.
 
 ## Build & Release
 

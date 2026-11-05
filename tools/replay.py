@@ -23,8 +23,8 @@ NOISY_PREFIXES = ("previously.", "added.")  # GSI echoes the old values of whate
 
 HELP = """\
   <enter> | n [N]   send the next N frames (default 1)
-  c [prefix]        send frames until a field changes (optionally only under a path prefix,
-                    e.g. abilities.ability3) or a rule fires
+  c [prefix]        send frames until a field changes or a rule event fires (the field check can be
+                    limited to a path prefix, e.g. abilities.ability3)
   d                 show what changed in the last step
   s [path]          dump the app's raw state (whole thing, or a dotted path such as abilities.ability3)
   note <text>       annotate the current frame (saved to the sidecar notes file)
@@ -125,7 +125,11 @@ class Stepper:
         self._frames = load_frames(recording)
         self._pos = 0  # frames sent so far; the current frame is _frames[_pos - 1]
         self._raw: dict | None = None  # the app's raw state after the current frame
+        self._prev_raw: dict | None = None  # ... and after the frame before it
         self._last_diff: list[str] = []
+        self._warned = False
+        self._published = 0  # bus events seen so far
+        self._last_events: list[str] = []  # events published by the last frame
 
     async def run(self) -> None:
         commands = {
@@ -153,41 +157,50 @@ class Stepper:
         async with self._session.get(self._state_url) as resp:
             return await resp.json()
 
-    async def _send_next(self) -> tuple[dict | None, list[str]] | None:
-        """Send one frame; returns (previous raw state, rule events fired), or None at the end."""
+    async def _send_next(self) -> bool:
+        """Send one frame; returns False at the end of the recording."""
         if self._pos >= len(self._frames):
             print("End of recording")
-            return None
+            return False
         frame = self._frames[self._pos]
         self._pos += 1
         await send(self._session, self._url, self._pos, frame)
 
         snap = await self._fetch_state()
-        old, self._raw = self._raw, snap["raw"]
-        self._last_diff = diff(old, self._raw)
+        self._prev_raw, self._raw = self._raw, snap["raw"]
+        self._last_diff = diff(self._prev_raw, self._raw)
+        events = snap["events"]
+        if not events["enabled"] and not self._warned:
+            self._warned = True
+            print("(app was not started with --debug: rule events won't be shown)")
+        new = min(events["published"] - self._published, len(events["recent"]))
+        self._last_events = [
+            f"  FIRED {e['type']} {e['key']} (clock {e['clock_time']})"
+            for e in (events["recent"][-new:] if new > 0 else [])
+        ]
+        self._published = events["published"]
         if frame.note:
             print(f"#{self._pos} {frame.ts}  NOTE: {frame.note}")
-        for event in snap["fired"]:
-            print(f"#{self._pos} FIRED {event}")
-        return old, snap["fired"]
+        return True
 
     async def _next(self, arg: str) -> None:
         for _ in range(int(arg) if arg else 1):
-            if await self._send_next() is None:
+            if not await self._send_next():
                 return
         print(f"#{self._pos} {self._frames[self._pos - 1].ts}")
+        if self._last_events:
+            print("\n".join(self._last_events))
 
     async def _until_change(self, prefix: str) -> None:
-        while (sent := await self._send_next()) is not None:
-            old, fired = sent
-            changes = diff(old, self._raw, prefix) if self._pos > 1 else []  # frame 1 diffs against nothing
-            if changes or fired:
+        while await self._send_next():
+            changes = diff(self._prev_raw, self._raw, prefix) if self._pos > 1 else []  # frame 1 diffs against nothing
+            if changes or self._last_events:
                 print(f"#{self._pos} {self._frames[self._pos - 1].ts}")
-                print("\n".join(changes))
+                print("\n".join(changes + self._last_events))
                 return
 
     async def _show_diff(self, _: str) -> None:
-        print("\n".join(self._last_diff) or "  (no changes)")
+        print("\n".join(self._last_diff + self._last_events) or "  (no changes)")
 
     async def _show_state(self, path: str) -> None:
         raw = (await self._fetch_state())["raw"]
