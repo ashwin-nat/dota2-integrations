@@ -1321,8 +1321,10 @@ function copyFriendRules(friend, rules, { replace = false } = {}) {
       mine[0].actions.unshift(...copy.actions.filter((a) => a.type === "play_sound"));
       continue;
     }
-    let id = rule.id;
-    for (let n = 2; S.config.rules.some((r) => r.id === id); n++) id = `${rule.id}_${n}`;
+    // Prefixed with the friend's name (as when their rules play via "follow"), so it never clashes with a rule of yours
+    const base = `${friend.name}/${rule.id}`;
+    let id = base;
+    for (let n = 2; S.config.rules.some((r) => r.id === id); n++) id = `${base}_${n}`;
     copy.id = id;
     // Light priorities must stay unique across your own rules
     let prio = nextPriority();

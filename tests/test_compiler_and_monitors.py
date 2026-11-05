@@ -121,3 +121,22 @@ def test_two_rules_on_the_same_trigger_each_fire_their_own_actions_once():
     compiled.evaluate_all(_hero_snap(True))
     compiled.evaluate_all(_hero_snap(False))
     assert sorted(arbiter.calls) == [("set", 5, (1, 2, 3)), ("set", 6, (1, 2, 3))]
+
+
+def test_compile_skips_a_repeated_rule_id_and_keeps_the_first(caplog):
+    # Followed friends' rules are compiled without RulesConfig's duplicate-id check
+    first = RulesConfig.model_validate({"rules": [_hero_rule("same", "HERO_KILLED", [_light(5)])]}).rules
+    second = RulesConfig.model_validate({"rules": [_hero_rule("same", "HERO_RESPAWNED", [_light(6)])]}).rules
+    arbiter = FakeArbiter()
+    executors = {
+        ActionType.LIGHT: LightExecutor(arbiter),
+        ActionType.PLAY_SOUND: SoundExecutor(sound=None),
+        ActionType.WEBHOOK: WebhookExecutor(),
+    }
+    with caplog.at_level("WARNING"):
+        compiled = compile_rules(first + second, EventBus(), executors)
+    assert len(compiled.monitors) == 1
+    assert "Skipping rule 'same'" in caplog.text
+    compiled.evaluate_all(_hero_snap(True))
+    compiled.evaluate_all(_hero_snap(False))  # the first rule (HERO_KILLED) is the one that was kept
+    assert arbiter.calls == [("set", 5, (1, 2, 3))]
