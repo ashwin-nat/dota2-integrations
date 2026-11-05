@@ -77,11 +77,25 @@ const S = {
 const lookup = { items: new Map(), abilities: new Map() };
 
 const $ = (sel, root = document) => root.querySelector(sel);
-const trashIcon = () => {
-  const icon = document.createElement("span");
-  icon.className = "trash-icon";
-  icon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6"/></svg>';
-  return icon;
+const ICONS = {
+  trash: "M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6",
+  save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8",
+  sound: "M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14",
+  light: "M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.3h6c0-1.1.4-1.8 1-2.3A7 7 0 0 0 12 2z",
+  webhook: "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7",
+  shuffle: "M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5",
+  plus: "M12 5v14M5 12h14",
+  pencil: "M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z",
+  copy: "M9 9h13v13H9zM5 15H2V2h13v3",
+  swap: "M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3",
+  upload: "M12 16V4M7 9l5-5 5 5M4 20h16",
+  invite: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6",
+};
+const icon = (name) => {
+  const el = document.createElement("span");
+  el.className = "ico";
+  el.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
+  return el;
 };
 
 const h = (tag, attrs = {}, ...children) => {
@@ -114,6 +128,7 @@ async function loadAll() {
   const [config, media, board, info] = await Promise.all([api("/api/config"), api("/api/media"), api("/api/soundboard"), api("/api/info")]);
   S.dataDir = info.data_dir;
   $("#power").hidden = !info.can_shutdown;
+  $("#save-recording").hidden = !info.recording;
   S.config = config;
   S.media = media;
   S.clips = board.clips;
@@ -336,6 +351,35 @@ function describeChanges() {
   return out;
 }
 
+// The file is already on disk; this only offers a better name for it
+function openRecordingSaved({ file, count }) {
+  const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const original = file.replace(/\.jsonl$/, "");
+  const rename = async () => {
+    const to = input.value.trim();
+    if (!to || to === original) { close(); return; }
+    const res = await fetch("/record/rename", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: file, to }) }).catch((e) => ({ ok: false, text: async () => e.message }));
+    if (!res.ok) { toast(await res.text(), "err"); input.focus(); return; }
+    toast(`Renamed to ${(await res.json()).file}`, "ok");
+    close();
+  };
+  const input = h("input", { type: "text", value: original, maxlength: 100, "aria-label": "Recording name", onkeydown: (e) => { if (e.key === "Enter") rename(); } });
+  const backdrop = h("div", { class: "modal-backdrop", onmousedown: (e) => { if (e.target === backdrop) close(); } },
+    h("div", { class: "modal recording-saved", role: "dialog", "aria-modal": "true", "aria-label": "Recording saved" },
+      h("div", { class: "modal-head" }, h("h2", {}, "Recording saved"), h("button", { class: "btn btn-ghost btn-sm", "aria-label": "Close", onclick: close }, "✕")),
+      h("div", { class: "recording-name" },
+        h("p", { class: "hint" }, `${plural(count, "update")} saved to the recordings folder. Name it if you like:`),
+        h("div", { class: "field" }, input, h("span", { class: "hint" }, ".jsonl"))),
+      h("div", { class: "modal-foot" },
+        h("span", { style: { flex: 1 } }),
+        h("button", { class: "btn btn-ghost", onclick: close }, "Keep this name"),
+        h("button", { class: "btn btn-gold", onclick: rename }, icon("pencil"), "Rename"))));
+  document.body.append(backdrop);
+  document.addEventListener("keydown", onKey);
+  input.select();
+}
+
 function showChanges() {
   if (!S.config || !isDirty()) return;
   const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
@@ -350,7 +394,7 @@ function showChanges() {
       h("div", { class: "modal-foot" },
         h("span", { style: { flex: 1 } }),
         h("button", { class: "btn btn-ghost", onclick: close }, "Close"),
-        h("button", { class: "btn btn-gold", onclick: () => { close(); save(); } }, "Save"))));
+        h("button", { class: "btn btn-gold", onclick: () => { close(); save(); } }, icon("save"), "Save"))));
   document.body.append(backdrop);
   document.addEventListener("keydown", onKey);
 }
@@ -475,6 +519,19 @@ $("#lighting-vendor").addEventListener("change", (e) => { S.config.lighting.vend
 $("#save").addEventListener("click", save);
 $("#status").addEventListener("click", (e) => { if (e.currentTarget.classList.contains("dirty")) showChanges(); });
 $("#power").addEventListener("click", powerOff);
+$("#save-recording").addEventListener("click", async (e) => {
+  const button = e.currentTarget;
+  button.disabled = true;
+  try {
+    const res = await fetch("/record/save", { method: "POST", headers: { Accept: "application/json" } });
+    if (res.ok) openRecordingSaved(await res.json());
+    else toast((await res.text()).trim(), "err");
+  } catch (err) {
+    toast(`Couldn't save the recording: ${err.message}`, "err");
+  } finally {
+    button.disabled = false;
+  }
+});
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); if (isDirty()) save(); }
 });
@@ -891,7 +948,7 @@ function renderSoundboard() {
   return [
     h("div", { class: "board-head" }, h("h1", {}, "Soundboard"), search,
       h("button", { class: "btn btn-sm", title: "Stop every sound playing on this PC", onclick: () => api("/api/soundboard/stop", { method: "POST" }) }, "■ Stop all"),
-      h("button", { class: "btn btn-gold btn-sm", onclick: () => openClipEditor() }, "+ Add sound")),
+      h("button", { class: "btn btn-gold btn-sm", onclick: () => openClipEditor() }, icon("plus"), "Add sound")),
     h("p", { class: "hint" }, `Click a sound to play it on this PC's speakers. ▶ previews it in the browser only. Clips can be up to ${S.maxClip} seconds, cut from an audio file, a video, or a YouTube link. Each clip is saved as an MP3 named after it, so you can also pick it as the sound for items, abilities and game events.`),
     grid,
     !S.clips.length ? h("p", { class: "hint sb-empty" }, "No sounds yet. Drop an audio or video file on the board, or click Add sound.") : null,
@@ -1376,7 +1433,7 @@ function renderFriends() {
   packInput.addEventListener("change", () => packInput.files[0] && importPackFile(packInput.files[0]));
   const head = h("div", { class: "board-head" }, h("h1", {}, "Friends & packs"),
     h("a", { class: "btn btn-sm", href: "/api/pack/export", download: "", title: "Download your rules, soundboard clips and their sounds as one .zip" }, "⇩ Export my pack"),
-    h("label", { class: "btn btn-sm", for: "pack-input", title: "Add a friend's .zip pack" }, "⇧ Import pack"), packInput,
+    h("label", { class: "btn btn-sm", for: "pack-input", title: "Add a friend's .zip pack" }, icon("upload"), "Import pack"), packInput,
     S.sharing?.enabled ? h("button", { class: "btn btn-sm", title: "Check the shared folder for changes", onclick: async () => { await Promise.all([loadSharing(), refreshClips()]); render(); } }, "↻ Refresh") : null);
   if (!S.sharing) return [head, h("p", { class: "hint" }, "Loading…")];
   if (S.shareSetup) return [head, renderShareSetup()];
@@ -1410,7 +1467,7 @@ function renderFriends() {
     h("div", { class: "share-who" },
       h("div", {}, "Sharing as ", h("strong", {}, sh.name)),
       h("div", { class: "hint", title: sh.folder }, "Folder: ", h("code", {}, sh.folder))),
-    h("button", { class: "btn btn-sm btn-gold", onclick: openInvite }, "Invite friends"),
+    h("button", { class: "btn btn-sm btn-gold", onclick: openInvite }, icon("invite"), "Invite friends"),
     h("button", { class: "btn btn-sm", onclick: () => { S.shareSetup = { name: sh.name, browse: null }; render(); } }, "Change"),
     h("button", { class: "btn btn-sm btn-ghost btn-danger", onclick: turnOffSharing }, "Stop sharing")));
   if (S.invite) out.push(renderInvite());
@@ -1598,9 +1655,9 @@ function renderFriend(f) {
       })),
       haveRule(r) ? h("span", { class: "have" }, "✓ In yours")
         : clash ? h("span", { class: "copy-choice" },
-          h("button", { class: "btn btn-sm", disabled: broken, title: why || "Use their sound instead of yours (your lights stay)", onclick: () => copyFriendRules(f, [r], { replace: true }) }, "Replace mine"),
-          h("button", { class: "btn btn-sm btn-ghost", disabled: broken, title: why || "Keep yours and add theirs; both play", onclick: () => copyFriendRules(f, [r]) }, "Add both"))
-        : h("button", { class: "btn btn-sm", disabled: broken, title: why, onclick: () => copyFriendRules(f, [r]) }, "Copy"));
+          h("button", { class: "btn btn-sm", disabled: broken, title: why || "Use their sound instead of yours (your lights stay)", onclick: () => copyFriendRules(f, [r], { replace: true }) }, icon("swap"), "Replace mine"),
+          h("button", { class: "btn btn-sm btn-ghost", disabled: broken, title: why || "Keep yours and add theirs; both play", onclick: () => copyFriendRules(f, [r]) }, icon("plus"), "Add both"))
+        : h("button", { class: "btn btn-sm", disabled: broken, title: why, onclick: () => copyFriendRules(f, [r]) }, icon("copy"), "Copy"));
   };
   const follow = h("label", { class: "toggle", title: "Their sounds play on this PC for triggers you don't have a sound for (lights stay yours)" },
     h("input", { type: "checkbox", checked: f.following, onchange: (e) => setFollow(f, e.target.checked) }),
@@ -1612,7 +1669,7 @@ function renderFriend(f) {
       h("div", { class: "friend-name" }, h("strong", {}, f.name),
         h("div", { class: "hint" }, [`${plural(f.rules.length, "rule")}`, `${plural(f.soundboard.length, "soundboard clip")}`, source, `updated ${ago(f.updated)}`].filter(Boolean).join(" · "))),
       follow,
-      fresh.length ? h("button", { class: "btn btn-sm btn-gold", title: "Copy the rules for triggers you don't have yet", onclick: () => copyFriendRules(f, fresh) }, `Copy new (${fresh.length})`) : null,
+      fresh.length ? h("button", { class: "btn btn-sm btn-gold", title: "Copy the rules for triggers you don't have yet", onclick: () => copyFriendRules(f, fresh) }, icon("copy"), `Copy new (${fresh.length})`) : null,
       isPack && f.source ? h("button", { class: "btn btn-sm btn-ghost", title: "Check the link for a newer version", onclick: () => packAction(f, "refresh") }, "↻") : null,
       isPack ? h("button", { class: "btn btn-sm btn-ghost btn-danger", title: "Remove this pack", onclick: () => packAction(f, "remove") }, "✕") : null),
     f.following && withSound
@@ -1803,7 +1860,7 @@ function renderInspector() {
   ].filter(Boolean));
 }
 
-const addSoundButton = (add) => h("button", { class: "btn btn-sm", disabled: !S.media[0], onclick: () => add({ type: "play_sound", enabled: true, clips: [{ file: S.media[0].file, probability: 100, volume: 50 }] }) }, "+ Sound");
+const addSoundButton = (add) => h("button", { class: "btn btn-sm", disabled: !S.media[0], onclick: () => add({ type: "play_sound", enabled: true, clips: [{ file: S.media[0].file, probability: 100, volume: 50 }] }) }, icon("sound"), "Sound");
 
 // The schedule a reminder had before Repeats was flipped, so flipping it back restores it
 const otherSchedule = new Map();
@@ -1886,9 +1943,9 @@ function renderEventBody(ev) {
     actions.length ? actions.map(({ rule, action }) => renderAction(rule, action, monitor, changed)) : h("p", { class: "hint" }, "Nothing happens yet. Add a sound or a light:"),
     h("div", { class: "add-row" },
       addSoundButton(add),
-      h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, "+ Light"),
-      h("button", { class: "btn btn-sm btn-ghost", onclick: () => add({ type: "webhook", enabled: true, url: "https://", api_key: null, auth_type: null, timeout: 2, cooldown: 0 }) }, "+ Webhook")),
-    rules.length ? h("button", { class: "btn btn-sm btn-delete", onclick: removeRules }, trashIcon(), `Delete ${what}`) : null,
+      h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, icon("light"), "Light"),
+      h("button", { class: "btn btn-sm btn-ghost", onclick: () => add({ type: "webhook", enabled: true, url: "https://", api_key: null, auth_type: null, timeout: 2, cooldown: 0 }) }, icon("webhook"), "Webhook")),
+    rules.length ? h("button", { class: "btn btn-sm btn-delete", onclick: removeRules }, icon("trash"), `Delete ${what}`) : null,
   );
 }
 
@@ -2052,7 +2109,7 @@ function renderAction(rule, a, monitor, changed) {
       multi ? bar : null,
       rows,
       h("div", { class: "add-row" },
-        h("button", { class: "btn btn-sm", disabled: !S.media[0], title: "Add another sound; each time this fires, one is picked at random by the odds above", onclick: addVariant }, "+ Variant"),
+        h("button", { class: "btn btn-sm", disabled: !S.media[0], title: "Add another sound; each time this fires, one is picked at random by the odds above", onclick: addVariant }, icon("shuffle"), "Variant"),
         multi ? h("button", { class: "btn btn-sm btn-ghost", title: "Give every variant the same odds", onclick: equalize }, "Even split") : null));
     makeDropTarget(card, async ([file]) => {
       const path = await uploadFile(file);

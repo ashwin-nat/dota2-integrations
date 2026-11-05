@@ -34,6 +34,7 @@ def setup_config_ui(
     reload: ReloadFn,
     sound: SoundManager,
     shutdown: Callable[[], None] | None = None,
+    recording: bool = False,
 ) -> None:
     """Mount the rules editor at /ui and its JSON API at /api on the GSI server's app."""
     routes = web.RouteTableDef()
@@ -133,7 +134,7 @@ def setup_config_ui(
 
     @routes.get("/api/info")
     async def info(_: web.Request) -> web.Response:
-        return web.json_response({"data_dir": str(Path.cwd()), "can_shutdown": shutdown is not None})
+        return web.json_response({"data_dir": str(Path.cwd()), "can_shutdown": shutdown is not None, "recording": recording})
 
     @routes.post("/api/shutdown")
     async def power_off(_: web.Request) -> web.Response:

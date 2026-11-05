@@ -184,7 +184,7 @@ async def main(
         asyncio.create_task(
             serve(
                 queue,
-                lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound, shutdown=stop.set),
+                lambda app: setup_config_ui(app, RULES_PATH, reload_rules, sound, shutdown=stop.set, recording=recorder is not None),
                 on_started=_open_editor,
                 recorder=recorder,
                 state=state,
