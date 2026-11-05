@@ -29,6 +29,8 @@ class ActionExecutor:
     Params are validated at config load — no validation here.
     """
 
+    BURST_LIMIT = 3  # this many sounds from one game update are treated as a burst and dropped
+
     def __init__(
         self,
         sound: SoundManager,
@@ -44,7 +46,7 @@ class ActionExecutor:
     def worker_coroutines(self, bus: RuleEventBus) -> dict[str, Any]:
         """Return one named coroutine per action type queue."""
         return {
-            "action_sound":   self._drain(bus.queue_for(ActionType.PLAY_SOUND)),
+            "action_sound":   self._drain_sounds(bus.queue_for(ActionType.PLAY_SOUND)),
             "action_webhook": self._drain(bus.queue_for(ActionType.WEBHOOK)),
         }
 
@@ -54,6 +56,28 @@ class ActionExecutor:
             if item.action.enabled:
                 await self._dispatch(item.action, item.ctx)
             queue.task_done()
+
+    async def _drain_sounds(self, queue: asyncio.Queue[QueuedAction]) -> None:
+        """Like _drain, but sounds queued together, BURST_LIMIT or more, are dropped.
+
+        That many at once is the state already true when a monitor first looks (starting items,
+        day/night, ...), e.g. at match start or after a rules reload, and playing them overlaps
+        into noise. Updates are processed synchronously, so a burst is all in the queue together.
+        """
+        while True:
+            first = await queue.get()
+            batch = [first] if first.action.enabled else []
+            while not queue.empty():
+                item = queue.get_nowait()
+                if item.action.enabled:
+                    batch.append(item)
+            if len(batch) >= self.BURST_LIMIT:
+                logger.warning(
+                    f"Dropped {len(batch)} sounds fired at once: " + ", ".join(q.ctx.rule_id for q in batch)
+                )
+            else:
+                for q in batch:
+                    await self._dispatch(q.action, q.ctx)
 
     async def _dispatch(self, action: AnyAction, ctx: EventContext) -> None:
         logger.info(f"{ctx} -> {action.type}")
