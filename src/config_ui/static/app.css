@@ -146,6 +146,9 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
 .btn-ghost:hover { color: var(--text); }
 .btn-danger:hover { color: var(--red-hi); }
+.btn-delete { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; background: rgba(184,57,42,.14); border-color: var(--red); color: var(--red-hi); }
+.btn-delete:hover { background: var(--red); border-color: var(--red-hi); color: #fff; }
+.trash-icon { display: inline-flex; }
 
 .status {
   font-family: "Barlow Condensed", sans-serif;
@@ -711,10 +714,10 @@ label.btn { display: inline-flex; align-items: center; }
 /* Reminders */
 .reminder-add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 .reminder-timing { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--line, rgba(255,255,255,.08)); border-radius: 8px; }
+.reminder-timing > .toggle { margin-bottom: 8px; }
 .reminder-timing .field > .lbl { width: 48px; }
 .reminder-timing .clock-input { width: 72px; flex: none; }
 .reminder-timing .field .hint { font-size: 11px; }
-.reminder-timing > .btn { margin-top: 8px; }
 
 /* ---------- Sound variants: odds bar ---------- */
 

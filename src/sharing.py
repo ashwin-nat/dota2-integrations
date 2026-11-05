@@ -353,6 +353,8 @@ def _trigger(monitor: object) -> str:
         m = {"type": "item", "target": "item_blink", "event": m.get("event")}
     if m.get("type") == "periodic":  # many timers coexist, told apart by their schedule
         return "periodic|" + "|".join(str(m.get(k)) for k in ("period", "offset", "min_time", "max_time"))
+    if m.get("type") == "once":
+        return f"once|{m.get('time')}"
     return f"{m.get('type')}|{m.get('target', '')}|{m.get('event')}"
 
 

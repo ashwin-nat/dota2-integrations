@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 from src import sharing
 from src.config_ui.files import safe_filename
 from src.media import LOCAL_MEDIA_DIR, media_dir, media_ref, resolve
-from src.rules.config import RulesConfig, sound_refs
+from src.rules.config import RulesConfig, drop_sound, sound_refs
 from src.sound import SoundManager
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,7 @@ def setup_soundboard(
     routes = web.RouteTableDef()
 
     def retarget_rules(old: str, new: str | None) -> int:
-        """Point rules at a renamed clip, or remove their sound action when it's deleted. Returns actions changed."""
+        """Point rules at a renamed clip, or remove it from their sound actions when deleted. Returns actions changed."""
         if not rules_path.exists():
             return 0
         raw = json.loads(rules_path.read_text(encoding="utf-8"))
@@ -165,8 +165,8 @@ def setup_soundboard(
                         if clip.get("file") == old:
                             clip["file"] = new
             else:
-                rule["actions"] = [a for a in rule["actions"] if a not in hits]
-                logger.info(f"Removed {len(hits)} sound action(s) playing {old} from rule {rule.get('id')!r}"
+                rule["actions"] = [a for a in rule["actions"] if not any(a is hit for hit in hits) or drop_sound(a, old)]
+                logger.info(f"Removed {old} from {len(hits)} sound action(s) in rule {rule.get('id')!r}"
                             + ("" if rule["actions"] else " (the rule now has no actions)"))
         if not changed:
             return 0
@@ -276,9 +276,8 @@ def setup_soundboard(
     async def delete_clip(request: web.Request) -> web.Response:
         clips = _load()
         clip = find(clips, request.match_info["id"])
-        # Remove rule sounds first so rules.json never points at a missing file
+        # Only the rules and the soundboard change: the file stays in the library (and for friends who use it)
         rules_changed = retarget_rules(clip.file, None)
-        resolve(clip.file).unlink(missing_ok=True)
         _save([c for c in clips if c.id != clip.id])
         logger.info(f"Soundboard clip deleted: {clip.name}")
         return web.json_response({"ok": True, "file": clip.file, "rules_changed": rules_changed})

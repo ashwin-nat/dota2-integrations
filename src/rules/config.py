@@ -13,7 +13,7 @@ from src.rules.ability_monitors import AbilityMonitorConfig
 from src.rules.hero_monitor import HeroMonitorConfig
 from src.rules.item_monitors import BlinkMonitorConfig, ItemMonitorConfig, MidasMonitorConfig
 from src.rules.map_monitor import MapMonitorConfig
-from src.rules.periodic_monitor import PeriodicMonitorConfig
+from src.rules.periodic_monitor import OnceMonitorConfig, PeriodicMonitorConfig
 
 
 # --- Action types ---
@@ -109,6 +109,19 @@ AnyAction = Annotated[
 ]
 
 
+def drop_sound(action: dict, file: str) -> bool:
+    """Remove `file` from a raw play_sound action; the first remaining clip takes its odds.
+
+    Returns False if no clips remain, so the caller can remove the action.
+    """
+    kept = [c for c in action["clips"] if c.get("file") != file]
+    if not kept:
+        return False
+    kept[0]["probability"] += sum(c["probability"] for c in action["clips"] if c.get("file") == file)
+    action["clips"] = kept
+    return True
+
+
 def sound_refs(action: dict) -> list[str]:
     """Sound files a raw (rules.json) action plays; empty for non-sound actions."""
     if action.get("type") != ActionType.PLAY_SOUND:
@@ -129,6 +142,7 @@ AnyMonitor = Annotated[
         HeroMonitorConfig,
         AbilityMonitorConfig,
         PeriodicMonitorConfig,
+        OnceMonitorConfig,
     ],
     Field(discriminator="type"),
 ]
