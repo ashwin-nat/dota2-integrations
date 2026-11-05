@@ -19,6 +19,7 @@ class MonitorType(StrEnum):
     HERO  = "hero"
     ABILITY = "ability"
     PERIODIC = "periodic"
+    ONCE = "once"
 
 
 class MonitorConfig(BaseModel):

@@ -42,6 +42,10 @@ class ActionExecutor(ABC, Generic[A]):
         """Startup only."""
         self._bindings.setdefault(key, []).append(binding)
 
+    def reset(self) -> None:
+        """Drop every binding, before recompiling rules on a config reload. Workers keep running."""
+        self._bindings.clear()
+
     def keys(self) -> Iterable[str]:
         return self._bindings.keys()
 

@@ -4,7 +4,17 @@ name: Build
 
 on:
   workflow_dispatch:
+    inputs:
+      library_link:
+        description: "Library link to build in (friends get these sounds on first run with no setup). Leave empty for none."
+        required: false
+        default: ""
   workflow_call:
+    inputs:
+      library_link:
+        type: string
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -12,33 +22,52 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset: dota2-integrations-windows.exe
+            asset: soundbo-windows.exe
           - os: macos-latest
-            asset: dota2-integrations-mac.zip
+            asset: soundbo-mac.zip
+          # macos-latest is Apple Silicon only; Intel Macs need their own build
+          - os: macos-15-intel
+            asset: soundbo-mac-intel.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.13"
       - run: uv sync --frozen
 
+      # Bundled into the app; fetched and followed on first run (see packs.default_library_link)
+      - name: Built-in library link
+        if: inputs.library_link != ''
+        run: echo "${{ inputs.library_link }}" > src/library_link.txt
+        shell: bash
+
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: |
-          uv run pyinstaller --onefile --paths . --name dota2-integrations src/main.py
-          mv dist/dota2-integrations.exe "dist/${{ matrix.asset }}"
+          # --windowed: no console window; the tray icon is how people open the editor and quit
+          uv run pyinstaller --onefile --windowed --paths . --name Soundbo \
+            --hidden-import pystray._win32 \
+            --add-data "src/config_ui/static:src/config_ui/static" \
+            $( [ -f src/library_link.txt ] && echo --add-data "src/library_link.txt:src" ) src/main.py
+          mv dist/Soundbo.exe "dist/${{ matrix.asset }}"
         shell: bash
 
-      # --windowed makes PyInstaller produce a dist/dota2-integrations.app bundle
+      # --windowed makes PyInstaller produce a dist/Soundbo.app bundle.
+      # Zip with ditto, not zip -r: zip copies the bundle's symlinks as files, which
+      # breaks the code signature and macOS then reports the app as "damaged".
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |
-          uv run pyinstaller --windowed --paths . --name dota2-integrations \
-            --osx-bundle-identifier com.dota2integrations.app src/main.py
-          cd dist && zip -r "${{ matrix.asset }}" dota2-integrations.app
+          uv run pyinstaller --windowed --paths . --name Soundbo \
+            --osx-bundle-identifier io.github.ashwin-nat.soundbo \
+            --hidden-import pystray._darwin \
+            --add-data "src/config_ui/static:src/config_ui/static" \
+            $( [ -f src/library_link.txt ] && echo --add-data "src/library_link.txt:src" ) src/main.py
+          codesign --verify --deep --strict dist/Soundbo.app
+          ditto -c -k --sequesterRsrc --keepParent dist/Soundbo.app "dist/${{ matrix.asset }}"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}

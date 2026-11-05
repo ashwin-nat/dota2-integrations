@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -9,6 +10,8 @@ from src.rules.actions import ActionBinding, ActionExecutor
 from src.rules.bus import EventBus
 from src.rules.config import ActionType, Rule
 from src.rules.monitor_base import Monitor, StateSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,6 +23,12 @@ class CompiledRules:
         """Run every monitor against one update."""
         for monitor in self.monitors:
             monitor.evaluate(snap)
+
+    def evaluate_before_horn(self, snap: StateSnapshot) -> None:
+        """Run only the monitors that care about the pre-game clock."""
+        for monitor in self.monitors:
+            if monitor.runs_before_horn:
+                monitor.evaluate(snap)
 
     def clear_all(self) -> None:
         """Reset every monitor's per-match state (on a match change)."""
@@ -38,17 +47,24 @@ def compile_rules(
 ) -> CompiledRules:
     """Build one monitor per rule, register its enabled actions on the executors, and subscribe them.
 
-    Every rule publishes under its own key (its id, unique by config validation), so each
-    key has exactly one monitor and one list of actions. Rules on the same trigger just get
-    separate monitors, and every action still runs once.
+    Every rule publishes under its own key (its id), so each key has exactly one monitor and
+    one list of actions. Rules on the same trigger just get separate monitors, and every action
+    still runs once. `RulesConfig` rejects duplicate ids in rules.json, but followed friends'
+    rules are added without that check, so a repeated id is skipped here with a warning
+    (the first rule with the id wins).
     """
     compiled = CompiledRules()
+    seen_ids: set[str] = set()
 
     for rule in rules:
         m = rule.monitor
         actions = [a for a in rule.actions if a.enabled]
         if not actions:
             continue
+        if rule.id in seen_ids:
+            logger.warning(f"Skipping rule {rule.id!r}: another rule already has this id")
+            continue
+        seen_ids.add(rule.id)
         monitor = m.build(bus, rule.id)
         compiled.monitors.append(monitor)
         for action in actions:

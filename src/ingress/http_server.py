@@ -1,5 +1,8 @@
 import asyncio
+import errno
 import logging
+import os
+from typing import Callable
 
 from aiohttp import web
 
@@ -7,6 +10,13 @@ from src.recorder import Recorder
 from src.state.store import GameState
 
 logger = logging.getLogger(__name__)
+
+PORT = int(os.environ.get("GSI_PORT", "6969"))
+BASE_URL = f"http://127.0.0.1:{PORT}"
+
+
+class PortInUse(Exception):
+    """Something already listens on PORT, often a second launch of this app."""
 
 
 async def handle_gsi(queue: asyncio.Queue, request: web.Request, recorder: Recorder | None = None) -> web.Response:
@@ -29,15 +39,19 @@ async def handle_gsi(queue: asyncio.Queue, request: web.Request, recorder: Recor
 
 async def serve(
     queue: asyncio.Queue,
+    setup_app: Callable[[web.Application], None] | None = None,
+    on_started: Callable[[str], None] | None = None,
     recorder: Recorder | None = None,
     state: GameState | None = None,
 ) -> None:
-    app = web.Application()
+    app = web.Application(client_max_size=25 * 1024 * 1024)
 
     async def _handle(request: web.Request) -> web.Response:
         return await handle_gsi(queue, request, recorder)
 
     app.router.add_post("/", _handle)
+    if setup_app is not None:
+        setup_app(app)
 
     if state is not None:
         async def _state(request: web.Request) -> web.Response:
@@ -54,7 +68,17 @@ async def serve(
 
     if recorder is not None:
         async def _save(request: web.Request) -> web.Response:
-            path = recorder.save()
+            if not len(recorder):
+                return web.Response(status=409, text="Nothing recorded yet\n")
+            # The editor sends a name as JSON and gets JSON back; a plain request gets a timestamped file
+            wants_json = request.content_type == "application/json"
+            name = str((await request.json()).get("name") or "") if wants_json else ""
+            try:
+                path = recorder.save(name=name or None)
+            except (ValueError, OSError) as e:
+                return web.Response(status=400, text=str(e))
+            if wants_json:
+                return web.json_response({"file": path.name, "count": len(recorder)})
             return web.Response(text=f"Saved {len(recorder)} payloads to {path}\n")
 
         app.router.add_route("*", "/record/save", _save)
@@ -62,10 +86,20 @@ async def serve(
     runner = web.AppRunner(app)
     await runner.setup()
 
-    site = web.TCPSite(runner, "127.0.0.1", 6969)
-    await site.start()
+    site = web.TCPSite(runner, "127.0.0.1", PORT)
+    try:
+        await site.start()
+    except OSError as e:
+        await runner.cleanup()
+        # 10048 is Windows' WSAEADDRINUSE
+        if e.errno in (errno.EADDRINUSE, 10048):
+            raise PortInUse() from e
+        raise
 
-    logger.info("Listening on http://127.0.0.1:6969")
+    base_url = BASE_URL
+    logger.info(f"Listening on {base_url} (rules editor: {base_url}/ui)")
+    if on_started is not None:
+        on_started(base_url)
 
     try:
         await asyncio.get_running_loop().create_future()  # wait forever

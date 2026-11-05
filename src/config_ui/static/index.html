@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Soundbo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/ui/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◆</span>
+      <div>
+        <div class="brand-title">Soundbo</div>
+        <div class="brand-sub">Game soundboard · Dota 2</div>
+      </div>
+    </div>
+    <div class="topbar-controls">
+      <label class="master-vol" title="Master volume for every sound">
+        <span>Master volume</span>
+        <input type="range" id="master-volume" min="0" max="100">
+        <output id="master-volume-out"></output>
+      </label>
+      <label class="toggle" title="Turn smart-light control on or off">
+        <input type="checkbox" id="lighting-enabled">
+        <span class="toggle-track"></span>
+        <span>Lights</span>
+      </label>
+      <select id="lighting-vendor" title="Smart-light brand (needs restart)">
+        <option value="tapo">Tapo</option>
+        <option value="tuya">Tuya</option>
+        <option value="log">Log only</option>
+      </select>
+      <span id="status" class="status"></span>
+      <button id="save-recording" class="btn" title="Write everything recorded so far to the recordings folder" hidden><span class="rec-dot" aria-hidden="true"></span>Save recording</button>
+      <button id="save" class="btn btn-gold" disabled><span class="ico"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"/></svg></span>Save</button>
+      <button id="power" class="btn btn-power" title="Turn off Soundbo" aria-label="Turn off Soundbo" hidden>⏻</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="tabs" id="tabs">
+      <button data-tab="rules" class="active"><span class="tab-ico">☰</span>All rules</button>
+      <button data-tab="items"><span class="tab-ico">⚔</span>Items</button>
+      <button data-tab="heroes"><span class="tab-ico">♛</span>Heroes</button>
+      <button data-tab="events"><span class="tab-ico">☀</span>Game events</button>
+      <button data-tab="sounds"><span class="tab-ico">♪</span>Sounds</button>
+      <button data-tab="soundboard"><span class="tab-ico">▦</span>Soundboard</button>
+      <button data-tab="friends"><span class="tab-ico">☍</span>Friends</button>
+    </nav>
+
+    <main class="board" id="board"></main>
+
+    <aside class="inspector" id="inspector">
+      <div class="inspector-empty">
+        <div class="inspector-empty-glyph">◈</div>
+        <p>Pick an item, ability or game event to choose what happens when it triggers.</p>
+      </div>
+    </aside>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <script src="/ui/static/app.js"></script>
+</body>
+</html>

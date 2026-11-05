@@ -121,3 +121,69 @@ def test_two_rules_on_the_same_trigger_each_fire_their_own_actions_once():
     compiled.evaluate_all(_hero_snap(True))
     compiled.evaluate_all(_hero_snap(False))
     assert sorted(arbiter.calls) == [("set", 5, (1, 2, 3)), ("set", 6, (1, 2, 3))]
+
+
+def test_compile_skips_a_repeated_rule_id_and_keeps_the_first(caplog):
+    # Followed friends' rules are compiled without RulesConfig's duplicate-id check
+    first = RulesConfig.model_validate({"rules": [_hero_rule("same", "HERO_KILLED", [_light(5)])]}).rules
+    second = RulesConfig.model_validate({"rules": [_hero_rule("same", "HERO_RESPAWNED", [_light(6)])]}).rules
+    arbiter = FakeArbiter()
+    executors = {
+        ActionType.LIGHT: LightExecutor(arbiter),
+        ActionType.PLAY_SOUND: SoundExecutor(sound=None),
+        ActionType.WEBHOOK: WebhookExecutor(),
+    }
+    with caplog.at_level("WARNING"):
+        compiled = compile_rules(first + second, EventBus(), executors)
+    assert len(compiled.monitors) == 1
+    assert "Skipping rule 'same'" in caplog.text
+    compiled.evaluate_all(_hero_snap(True))
+    compiled.evaluate_all(_hero_snap(False))  # the first rule (HERO_KILLED) is the one that was kept
+    assert arbiter.calls == [("set", 5, (1, 2, 3))]
+
+
+def _clock_snap(clock):
+    return StateSnapshot(None, None, None, None, None, SimpleNamespace(clock_time=clock))
+
+
+def _once_rule(time):
+    return {"id": "once", "monitor": {"type": "once", "time": time}, "actions": [_light(1)]}
+
+
+def test_once_fires_a_single_time_when_the_clock_reaches_it():
+    compiled, _, arbiter, _ = _setup([_once_rule(300)])
+    for clock in (298, 299, 300, 301, 302):
+        compiled.evaluate_all(_clock_snap(clock))
+    assert arbiter.calls == [("set", 1, (1, 2, 3))]
+
+
+def test_once_fires_when_a_gap_in_updates_skips_past_it():
+    compiled, _, arbiter, _ = _setup([_once_rule(300)])
+    compiled.evaluate_all(_clock_snap(290))
+    compiled.evaluate_all(_clock_snap(310))
+    assert len(arbiter.calls) == 1
+
+
+def test_once_can_target_before_the_horn():
+    compiled, _, arbiter, _ = _setup([_once_rule(-30)])
+    compiled.evaluate_all(_clock_snap(-31))
+    compiled.evaluate_all(_clock_snap(-30))
+    assert len(arbiter.calls) == 1
+
+
+def test_once_does_not_fire_when_joining_after_its_time():
+    compiled, _, arbiter, _ = _setup([_once_rule(300)])
+    compiled.evaluate_all(_clock_snap(300))
+    compiled.evaluate_all(_clock_snap(301))
+    assert arbiter.calls == []
+
+
+def test_once_fires_again_in_the_next_match():
+    compiled, _, arbiter, _ = _setup([_once_rule(300)])
+    compiled.evaluate_all(_clock_snap(299))
+    compiled.evaluate_all(_clock_snap(300))
+    compiled.clear_all()
+    arbiter.calls.clear()
+    compiled.evaluate_all(_clock_snap(299))
+    compiled.evaluate_all(_clock_snap(300))
+    assert len(arbiter.calls) == 1

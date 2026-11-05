@@ -1,9 +1,9 @@
 ---
 name: dota-rules
-description: Add, edit, remove, or debug rules in rules.json for the dota2-integrations app — triggers (item/ability cooldowns, item bought/lost, Midas charges, day/night, pause, hero death/respawn) mapped to actions (play sound, set light colour, call webhook). Use when the user says things like "play X when I use BKB", "turn the light red when I die", "why didn't my rule fire". Not for first-time install or lighting device setup (use dota-setup).
+description: Add, edit, remove, or debug rules in rules.json for the Soundbo app — triggers (item/ability cooldowns, item bought/lost, Midas charges, day/night, pause, hero death/respawn) mapped to actions (play sound, set light colour, call webhook). Use when the user says things like "play X when I use BKB", "turn the light red when I die", "why didn't my rule fire". Not for first-time install or lighting device setup (use dota-setup).
 ---
 
-# dota2-integrations rules
+# Soundbo rules
 
 `rules.json` in the project root holds `rules`, `sound` and `lighting`. The schema source of truth is `src/rules/config.py`. Read it before every edit, because monitor types, events and action fields change over time. Don't rely on schema tables in project docs or agent instruction files; they lag behind the code.
 
@@ -40,7 +40,7 @@ Every action has `enabled` (default `true`). Use it to switch an action off with
      ```
      Match the user's item to a display name; abbreviations like "BKB", "aghs", "euls" are fine to resolve. Keys often differ from display names: Aghanim's Scepter → `item_ultimate_scepter`, Eul's → `item_cyclone`, Battle Fury → `item_bfury`. If several entries could match (e.g. Aghanim's Scepter vs Blessing), ask which one. Use the item key, not the `item_recipe_*` column.
    - **Abilities:** no complete list is published online, and the set is too large to keep in this repo. Instead, the app writes the player hero's ability keys to the log at the start of each match, under a `Hero abilities:` line.
-     1. Grep `logs/dota2-integrations.log*` (the log rotates, so include the backups) for `Hero abilities:` and read the names listed under each match. Keys look like `<hero>_<ability>`, e.g. `spectre_reality`.
+     1. Grep `logs/soundbo.log*` (the log rotates, so include the backups) for `Hero abilities:` and read the names listed under each match. Keys look like `<hero>_<ability>`, e.g. `spectre_reality`.
      2. If the exact key is there, use it.
      3. If not, don't guess. Ask the user to start the app, open demo mode with that hero **as their own hero** (GSI only reports the player's hero, not allies or enemies), wait for the match to load, then come back. Then grep the log again for the exact key.
 3. **Pick the actions.** The field-by-field details are in `config.py`. Notes per action:
@@ -105,5 +105,5 @@ Check in this order:
 1. Did validation pass? A bad sound path or duplicate priority stops the app from starting.
 2. Is the `target` key right? Look it up again the same way as when adding a rule: the Cheats table for items, the `Hero abilities:` log line for abilities.
 3. Was the match in progress? Updates are ignored outside `DOTA_GAMERULES_STATE_GAME_IN_PROGRESS`, which includes the pre-horn strategy phase.
-4. Grep `logs/dota2-integrations.log` for the rule id. Every fired action is logged as `rule='<id>' ... -> play_sound` / `-> light (...)`. If it fired but the light didn't change, a higher-priority light was active at the time.
+4. Grep `logs/soundbo.log` for the rule id. Every fired action is logged as `rule='<id>' ... -> play_sound` / `-> light (...)`. If it fired but the light didn't change, a higher-priority light was active at the time.
 5. For an ability: was it learned (level > 0)?

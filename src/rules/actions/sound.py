@@ -6,6 +6,7 @@ import random
 from collections.abc import Coroutine
 from typing import Any
 
+from src.media import resolve
 from src.rules.actions.base import ActionBinding, ActionExecutor, describe
 from src.rules.bus import Event, EventType
 from src.rules.config import ActionType, PlaySoundAction
@@ -61,4 +62,8 @@ class SoundExecutor(ActionExecutor[PlaySoundAction]):
 
     async def _play(self, action: PlaySoundAction) -> None:
         clip = random.choices(action.clips, weights=[c.probability for c in action.clips])[0]
-        await self._sound.play(clip.file, volume=clip.volume / 100)
+        path = resolve(clip.file)
+        if not path.is_file():
+            logger.warning(f"Sound file not found, skipping: {path}")
+            return
+        await self._sound.play(str(path), volume=clip.volume / 100)

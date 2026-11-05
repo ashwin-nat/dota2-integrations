@@ -15,6 +15,16 @@ class SoundManager:
         self._loading: Dict[str, asyncio.Future[pygame.mixer.Sound]] = {}
         self._loop = asyncio.get_event_loop()
 
+    def set_default_volume(self, volume: float) -> None:
+        self._default_volume = volume
+
+    def stop_all(self) -> None:
+        pygame.mixer.stop()
+
+    async def check(self, path: str) -> None:
+        """Raise if pygame can't decode the file, so a bad upload fails now instead of mid-game."""
+        await self._loop.run_in_executor(None, pygame.mixer.Sound, path)
+
     async def play(self, path: str, *, volume: float = 1.0) -> None:
         sound = await self._load(path)
         channel = sound.play()
@@ -40,6 +50,7 @@ class SoundManager:
             return sound
         except Exception as exc:
             future.set_exception(exc)
+            future.exception()  # mark retrieved so a failure with no concurrent waiter isn't logged twice
             raise
         finally:
             self._loading.pop(path, None)

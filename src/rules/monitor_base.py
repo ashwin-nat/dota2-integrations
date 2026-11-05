@@ -34,6 +34,8 @@ class Monitor(ABC):
     """Watches the game snapshot and publishes events on the bus."""
 
     type: MonitorType  # set by MonitorConfig.build; used for logs and the startup counts
+    # Also evaluated during pre-game (clock -1:30 to the horn). Only monitors that read just the map clock.
+    runs_before_horn: bool = False
 
     @abstractmethod
     def evaluate(self, snap: StateSnapshot) -> None:

@@ -96,7 +96,7 @@ state     = GameState(compiled, bus, arbiter)
 
 ### Update semantics
 
-* Updates without a `map` section, or where `map.game_state` is not `DOTA_GAMERULES_STATE_GAME_IN_PROGRESS`, are ignored.
+* Updates without a `map` section, or where `map.game_state` is not `DOTA_GAMERULES_STATE_GAME_IN_PROGRESS`, are ignored, except that `DOTA_GAMERULES_STATE_PRE_GAME` updates run the `periodic` and `once` monitors, so timers can fire before the horn.
 * Otherwise each section is re-parsed and **replaces** the previous value (latest snapshot wins, no merging).
 * A change in `map.matchid` clears all monitor state and lighting requests.
 * `update()` is synchronous and must stay CPU-only. Anything I/O-bound (sound, lights, HTTP) goes through the `EventBus` to an executor and runs asynchronously.

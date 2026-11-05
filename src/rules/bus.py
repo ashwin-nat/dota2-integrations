@@ -37,6 +37,10 @@ class EventBus:
         self.published = 0  # total events published
         self.history: deque[Event] | None = deque(maxlen=history_size) if history_size > 0 else None
 
+    def reset(self) -> None:
+        """Drop every subscriber, before recompiling rules on a config reload."""
+        self._subscribers.clear()
+
     def subscribe(self, key: str, handler: Handler) -> None:
         """Register a handler for a key. Startup only; handlers run in subscription order."""
         self._subscribers.setdefault(key, []).append(handler)

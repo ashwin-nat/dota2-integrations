@@ -3,7 +3,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-LOG_PATH = Path("logs/dota2-integrations.log")
+LOG_PATH = Path("logs/soundbo.log")
 
 
 def setup_logging(
@@ -27,7 +27,9 @@ def setup_logging(
 
     root = logging.getLogger()
     root.setLevel(level)
-    root.addHandler(stdout_handler)
+    # A windowed Windows build has no console, so no stdout
+    if sys.stdout is not None:
+        root.addHandler(stdout_handler)
     root.addHandler(file_handler)
 
     # aiohttp logs every request at INFO; GSI posts several times a second

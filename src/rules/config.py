@@ -8,11 +8,12 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.media import resolve
 from src.rules.ability_monitors import AbilityMonitorConfig
 from src.rules.hero_monitor import HeroMonitorConfig
 from src.rules.item_monitors import BlinkMonitorConfig, ItemMonitorConfig, MidasMonitorConfig
 from src.rules.map_monitor import MapMonitorConfig
-from src.rules.periodic_monitor import PeriodicMonitorConfig
+from src.rules.periodic_monitor import OnceMonitorConfig, PeriodicMonitorConfig
 
 
 # --- Action types ---
@@ -108,6 +109,26 @@ AnyAction = Annotated[
 ]
 
 
+def drop_sound(action: dict, file: str) -> bool:
+    """Remove `file` from a raw play_sound action; the first remaining clip takes its odds.
+
+    Returns False if no clips remain, so the caller can remove the action.
+    """
+    kept = [c for c in action["clips"] if c.get("file") != file]
+    if not kept:
+        return False
+    kept[0]["probability"] += sum(c["probability"] for c in action["clips"] if c.get("file") == file)
+    action["clips"] = kept
+    return True
+
+
+def sound_refs(action: dict) -> list[str]:
+    """Sound files a raw (rules.json) action plays; empty for non-sound actions."""
+    if action.get("type") != ActionType.PLAY_SOUND:
+        return []
+    return [c["file"] for c in action.get("clips", []) if c.get("file")]
+
+
 # --- Monitor configs ---
 # Each monitor's config model lives next to its monitor class. This is the one
 # place that lists them all, so pydantic can pick the right one from `type`.
@@ -121,6 +142,7 @@ AnyMonitor = Annotated[
         HeroMonitorConfig,
         AbilityMonitorConfig,
         PeriodicMonitorConfig,
+        OnceMonitorConfig,
     ],
     Field(discriminator="type"),
 ]
@@ -139,7 +161,7 @@ class Rule(BaseModel):
         for action in self.actions:
             if isinstance(action, PlaySoundAction):
                 for clip in action.clips:
-                    if not Path(clip.file).is_file():
+                    if not resolve(clip.file).is_file():
                         raise ValueError(f"Rule {self.id!r}: sound file not found: {clip.file!r}")
         return self
 
@@ -190,7 +212,7 @@ class RulesConfig(BaseModel):
             config = cls()
             path.write_text(config.model_dump_json(indent=4))
             return config
-        raw = path.read_text()
+        raw = path.read_text(encoding="utf-8")
         data = json.loads(raw)
         config = cls.model_validate(data)
         dumped = config.model_dump()

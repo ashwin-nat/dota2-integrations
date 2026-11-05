@@ -83,8 +83,8 @@ def test_executor_only_reacts_to_its_own_keys():
     assert list(ex.keys()) == ["k"]
 
 
-def _sound(rule_id):
-    action = PlaySoundAction(type="play_sound", clips=[{"file": "x.mp3", "probability": 100}])
+def _sound(rule_id, file="x.mp3"):
+    action = PlaySoundAction(type="play_sound", clips=[{"file": file, "probability": 100}])
     return ActionBinding(rule_id, MonitorType.HERO, "HERO_KILLED", action)
 
 
@@ -104,12 +104,22 @@ async def _run_drain(ex, events, settle=0.05):
     task.cancel()
 
 
-def test_sound_executor_plays_below_burst_limit_and_ignores_ended():
+def test_sound_executor_plays_below_burst_limit_and_ignores_ended(tmp_path):
+    clip = tmp_path / "x.mp3"
+    clip.touch()
     sound = FakeSound()
     ex = SoundExecutor(sound)
-    ex.register("k", _sound("r1"))
+    ex.register("k", _sound("r1", str(clip)))
     asyncio.run(_run_drain(ex, [Event("k", EventType.STARTED, 1, 1), Event("k", EventType.ENDED, 2, 2)]))
-    assert sound.played == ["x.mp3"]
+    assert sound.played == [str(clip)]
+
+
+def test_sound_executor_skips_a_missing_file(tmp_path):
+    sound = FakeSound()
+    ex = SoundExecutor(sound)
+    ex.register("k", _sound("r1", str(tmp_path / "gone.mp3")))
+    asyncio.run(_run_drain(ex, [Event("k", EventType.STARTED, 1, 1)]))
+    assert sound.played == []
 
 
 def test_sound_executor_drops_burst():
@@ -121,7 +131,9 @@ def test_sound_executor_drops_burst():
     assert sound.played == []
 
 
-def test_sound_worker_survives_a_failing_play():
+def test_sound_worker_survives_a_failing_play(tmp_path):
+    clip = tmp_path / "x.mp3"
+    clip.touch()
     class Flaky(FakeSound):
         async def play(self, file, volume=1.0):
             if not self.played and not getattr(self, "failed", False):
@@ -131,7 +143,7 @@ def test_sound_worker_survives_a_failing_play():
 
     sound = Flaky()
     ex = SoundExecutor(sound)
-    ex.register("k", _sound("r1"))
+    ex.register("k", _sound("r1", str(clip)))
 
     async def scenario():
         task = asyncio.create_task(ex._drain())
@@ -144,7 +156,7 @@ def test_sound_worker_survives_a_failing_play():
         return alive
 
     assert asyncio.run(scenario())
-    assert sound.played == ["x.mp3"]
+    assert sound.played == [str(clip)]
 
 
 def test_bus_history_is_off_by_default():

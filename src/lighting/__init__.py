@@ -1,6 +1,5 @@
 import json
 import logging
-import sys
 from pathlib import Path
 
 from src.lighting.controller import LightingController
@@ -19,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 def load_lighting_controller(vendor: LightingVendor, enabled: bool) -> LightingController:
+    # Lights off: don't demand a device config the user never asked for
+    if not enabled:
+        return LogLightingDriver({}, enabled=False)
+
     driver_cls = _VENDOR_DRIVERS[vendor]
 
     # Drivers with no config fields don't need a config file
@@ -29,11 +32,13 @@ def load_lighting_controller(vendor: LightingVendor, enabled: bool) -> LightingC
 
     if not config_path.exists():
         config_path.write_text(json.dumps(driver_cls.get_empty_config(), indent=4))
-        logger.info(
-            f"Lighting config created at '{config_path}'. "
-            "Please fill in the required fields, then restart."
+        # Keep running without lights: the packaged app has no console, so
+        # exiting here would look like the app silently failed to start.
+        logger.warning(
+            f"Lighting config created at '{config_path.resolve()}'. "
+            "Lights are off until you fill in the required fields and restart."
         )
-        sys.exit(0)
+        return LogLightingDriver({}, enabled=False)
 
     config = json.loads(config_path.read_text())
     return driver_cls(config, enabled=enabled)
