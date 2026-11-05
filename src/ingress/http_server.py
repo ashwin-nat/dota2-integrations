@@ -70,21 +70,18 @@ async def serve(
         async def _save(request: web.Request) -> web.Response:
             if not len(recorder):
                 return web.Response(status=409, text="Nothing recorded yet\n")
-            path = recorder.save()
-            if "application/json" in request.headers.get("Accept", ""):
+            # The editor sends a name as JSON and gets JSON back; a plain request gets a timestamped file
+            wants_json = request.content_type == "application/json"
+            name = str((await request.json()).get("name") or "") if wants_json else ""
+            try:
+                path = recorder.save(name=name or None)
+            except (ValueError, OSError) as e:
+                return web.Response(status=400, text=str(e))
+            if wants_json:
                 return web.json_response({"file": path.name, "count": len(recorder)})
             return web.Response(text=f"Saved {len(recorder)} payloads to {path}\n")
 
-        async def _rename(request: web.Request) -> web.Response:
-            body = await request.json()
-            try:
-                path = recorder.rename(str(body.get("from", "")), str(body.get("to", "")))
-            except (ValueError, OSError) as e:
-                return web.Response(status=400, text=str(e))
-            return web.json_response({"file": path.name})
-
         app.router.add_route("*", "/record/save", _save)
-        app.router.add_post("/record/rename", _rename)
 
     runner = web.AppRunner(app)
     await runner.setup()

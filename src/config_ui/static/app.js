@@ -85,7 +85,6 @@ const ICONS = {
   webhook: "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7",
   shuffle: "M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5",
   plus: "M12 5v14M5 12h14",
-  pencil: "M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z",
   copy: "M9 9h13v13H9zM5 15H2V2h13v3",
   swap: "M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3",
   upload: "M12 16V4M7 9l5-5 5 5M4 20h16",
@@ -351,30 +350,32 @@ function describeChanges() {
   return out;
 }
 
-// The file is already on disk; this only offers a better name for it
-function openRecordingSaved({ file, count }) {
+// Nothing is written until Save, so Cancel leaves no file behind
+function openSaveRecording() {
   const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
-  const original = file.replace(/\.jsonl$/, "");
-  const rename = async () => {
-    const to = input.value.trim();
-    if (!to || to === original) { close(); return; }
-    const res = await fetch("/record/rename", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: file, to }) }).catch((e) => ({ ok: false, text: async () => e.message }));
-    if (!res.ok) { toast(await res.text(), "err"); input.focus(); return; }
-    toast(`Renamed to ${(await res.json()).file}`, "ok");
+  const pad = (n) => String(n).padStart(2, "0");
+  const now = new Date();
+  const suggested = `gsi_${now.getFullYear()}_${pad(now.getMonth() + 1)}_${pad(now.getDate())}_${pad(now.getHours())}_${pad(now.getMinutes())}_${pad(now.getSeconds())}`;
+  const saveIt = async () => {
+    const res = await fetch("/record/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: input.value.trim() || suggested }) })
+      .catch((e) => ({ ok: false, text: async () => e.message }));
+    if (!res.ok) { toast((await res.text()).trim(), "err"); input.focus(); return; }
+    const { file, count } = await res.json();
+    toast(`Saved ${plural(count, "update")} to ${file}`, "ok", 7000);
     close();
   };
-  const input = h("input", { type: "text", value: original, maxlength: 100, "aria-label": "Recording name", onkeydown: (e) => { if (e.key === "Enter") rename(); } });
+  const input = h("input", { type: "text", value: suggested, maxlength: 100, "aria-label": "Recording name", onkeydown: (e) => { if (e.key === "Enter") saveIt(); } });
   const backdrop = h("div", { class: "modal-backdrop", onmousedown: (e) => { if (e.target === backdrop) close(); } },
-    h("div", { class: "modal recording-saved", role: "dialog", "aria-modal": "true", "aria-label": "Recording saved" },
-      h("div", { class: "modal-head" }, h("h2", {}, "Recording saved"), h("button", { class: "btn btn-ghost btn-sm", "aria-label": "Close", onclick: close }, "✕")),
+    h("div", { class: "modal recording-saved", role: "dialog", "aria-modal": "true", "aria-label": "Save recording" },
+      h("div", { class: "modal-head" }, h("h2", {}, "Save recording"), h("button", { class: "btn btn-ghost btn-sm", "aria-label": "Close", onclick: close }, "✕")),
       h("div", { class: "recording-name" },
-        h("p", { class: "hint" }, `${plural(count, "update")} saved to the recordings folder. Name it if you like:`),
+        h("p", { class: "hint" }, "Saves everything recorded so far to the recordings folder."),
         h("div", { class: "field" }, input, h("span", { class: "hint" }, ".jsonl"))),
       h("div", { class: "modal-foot" },
         h("span", { style: { flex: 1 } }),
-        h("button", { class: "btn btn-ghost", onclick: close }, "Keep this name"),
-        h("button", { class: "btn btn-gold", onclick: rename }, icon("pencil"), "Rename"))));
+        h("button", { class: "btn btn-ghost", onclick: close }, "Cancel"),
+        h("button", { class: "btn btn-gold", onclick: saveIt }, icon("save"), "Save"))));
   document.body.append(backdrop);
   document.addEventListener("keydown", onKey);
   input.select();
@@ -519,19 +520,7 @@ $("#lighting-vendor").addEventListener("change", (e) => { S.config.lighting.vend
 $("#save").addEventListener("click", save);
 $("#status").addEventListener("click", (e) => { if (e.currentTarget.classList.contains("dirty")) showChanges(); });
 $("#power").addEventListener("click", powerOff);
-$("#save-recording").addEventListener("click", async (e) => {
-  const button = e.currentTarget;
-  button.disabled = true;
-  try {
-    const res = await fetch("/record/save", { method: "POST", headers: { Accept: "application/json" } });
-    if (res.ok) openRecordingSaved(await res.json());
-    else toast((await res.text()).trim(), "err");
-  } catch (err) {
-    toast(`Couldn't save the recording: ${err.message}`, "err");
-  } finally {
-    button.disabled = false;
-  }
-});
+$("#save-recording").addEventListener("click", openSaveRecording);
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); if (isDirty()) save(); }
 });
