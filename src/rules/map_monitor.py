@@ -41,6 +41,10 @@ class MapMonitor:
                 self._maybe_emit(daytime, paused, is_initial=False)
 
     def _maybe_emit(self, daytime: bool, paused: bool, is_initial: bool) -> None:
+        # Day/night report their starting state (the light colour needs it); a pause
+        # event means the game *changed* to that state, so nothing fires on the first look.
+        if is_initial and self._event in {"PAUSED", "UNPAUSED"}:
+            return
         if self._event == "DAYTIME_STARTED" and daytime:
             self._bus.emit(self._event_key)
         elif self._event == "NIGHTTIME_STARTED" and not daytime:
