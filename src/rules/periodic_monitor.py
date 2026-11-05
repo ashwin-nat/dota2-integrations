@@ -44,6 +44,8 @@ class PeriodicMonitor(Monitor):
     clock, so joining mid-game does not fire for a past trigger.
     """
 
+    runs_before_horn = True
+
     def __init__(
         self,
         period: int,
@@ -98,6 +100,8 @@ class OnceMonitor(Monitor):
     The clock never goes backwards within a match, so this fires at most once. The
     first update only records the clock, so joining after `time` does not fire.
     """
+
+    runs_before_horn = True
 
     def __init__(self, time: int, event_key: str, bus: EventBus) -> None:
         self._time = time

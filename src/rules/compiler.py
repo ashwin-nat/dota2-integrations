@@ -24,6 +24,12 @@ class CompiledRules:
         for monitor in self.monitors:
             monitor.evaluate(snap)
 
+    def evaluate_before_horn(self, snap: StateSnapshot) -> None:
+        """Run only the monitors that care about the pre-game clock."""
+        for monitor in self.monitors:
+            if monitor.runs_before_horn:
+                monitor.evaluate(snap)
+
     def clear_all(self) -> None:
         """Reset every monitor's per-match state (on a match change)."""
         for monitor in self.monitors:

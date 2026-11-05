@@ -96,6 +96,7 @@ tools/replay.py                # replay / step through recordings
 - **Latest snapshot wins** — each `state.update(data)` fully replaces the previous state.
 - **Transport-agnostic state layer** — `GameState` has no aiohttp dependency.
 - **Queue handoff** — the HTTP handler only pushes payloads onto an `asyncio.Queue`; the `ingest` task is the single writer that calls `state.update()`.
+- **Only timers run before the horn** — updates outside `GAME_IN_PROGRESS` are ignored, except `PRE_GAME` (clock about -1:30 to 0:00), which runs monitors with `runs_before_horn` (`periodic`, `once`). Earlier states (hero selection etc.) have unrelated clock values.
 - **No locks** — single writer (the ingest task), multiple readers allowed.
 - **Rule engine is compiled at startup** — `compile_rules()` builds one monitor per rule and registers each enabled action on its executor. No runtime routing logic.
 - **The bus is a plain topic router** — `EventBus` is synchronous publish/subscribe: a monitor `emit`s (STARTED) or `retract`s (ENDED) an event key, and the executors subscribed to that key handle it, in subscription order. A handler that raises is logged and does not stop the others. The bus knows nothing about actions.

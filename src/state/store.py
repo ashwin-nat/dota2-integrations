@@ -47,6 +47,9 @@ class GameState:
             return
 
         game_state = map.get("game_state")
+        if game_state == "DOTA_GAMERULES_STATE_PRE_GAME":
+            self._update_before_horn(map)
+            return
         if game_state != "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS":
             logger.info(f"Ignoring update: game state is {game_state}")
             return
@@ -72,6 +75,16 @@ class GameState:
         self._compiled_rules.evaluate_all(snap)
         if self.items is not None:
             self._prev_items = self.items
+        self._light_arbiter.commit()
+
+    def _update_before_horn(self, map: dict) -> None:
+        """Pre-game: the clock counts up to the horn, so only timers run. Heroes and items wait for the horn."""
+        new_map = parse_map(map)
+        self._handle_match_change(new_map)
+        self.map = new_map
+        self._bus.game_time = new_map.game_time
+        self._bus.clock_time = new_map.clock_time
+        self._compiled_rules.evaluate_before_horn(StateSnapshot(None, None, None, None, None, new_map))
         self._light_arbiter.commit()
 
     def set_compiled_rules(self, compiled_rules: CompiledRules) -> None:
