@@ -19,13 +19,14 @@ RULES_PATH = Path("rules.json")
 from src import dota_setup, packs, sharing, tray
 from src.config_ui import setup_config_ui
 from src.ingress.http_server import BASE_URL, PORT, PortInUse, serve
-from src.lighting.arbiter import LightingArbiter
 from src.lighting import load_lighting_controller
+from src.lighting.arbiter import LightingArbiter
 from src.log_setup import setup_logging
 from src.recorder import Recorder
-from src.rules import compile_rules, RulesConfig
-from src.rules.action_executor import ActionExecutor
-from src.rules.bus import RuleEventBus
+from src.rules import RulesConfig, compile_rules
+from src.rules.actions import (ActionExecutor, LightExecutor, SoundExecutor,
+                               WebhookExecutor)
+from src.rules.bus import EventBus
 from src.sound import SoundManager
 from src.state.store import GameState
 
@@ -47,7 +48,14 @@ def _exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     loop.default_exception_handler(context)
 
 
-async def main(record: bool = False, on_stop: Callable[[Callable[[], None]], None] | None = None) -> None:
+DEBUG_EVENT_HISTORY = 100
+
+
+async def main(
+    record: bool = False,
+    debug: bool = False,
+    on_stop: Callable[[Callable[[], None]], None] | None = None,
+) -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
 
     sharing.load()
@@ -73,24 +81,26 @@ async def main(record: bool = False, on_stop: Callable[[Callable[[], None]], Non
 
     # --- Rule engine setup ---
     sound = SoundManager(default_volume=rules_config.sound.volume / 100)
-    executor = ActionExecutor(sound)
     arbiter = LightingArbiter(lighting)
-    rule_bus = RuleEventBus(arbiter)
-    compiled = compile_rules(rules_config.rules + sharing.followed_rules(rules_config.rules), rule_bus)
-    state = GameState(compiled, rule_bus, arbiter)
-    n_monitors = len(compiled.item_monitors) + len(compiled.map_monitors) + len(compiled.hero_monitors) + \
-                    len(compiled.ability_monitors) + len(compiled.periodic_monitors)
-    logger.info(f"Rule engine ready: {n_monitors} monitors ({len(compiled.item_monitors)} item, "
-                f"{len(compiled.map_monitors)} map, {len(compiled.hero_monitors)} hero, "
-                f"{len(compiled.ability_monitors)} ability)")
+    executors: list[ActionExecutor] = [LightExecutor(arbiter), SoundExecutor(sound), WebhookExecutor()]
+    executor_by_type = {e.action_type: e for e in executors}
+    bus = EventBus(history_size=DEBUG_EVENT_HISTORY if debug else 0)
+    compiled = compile_rules(rules_config.rules + sharing.followed_rules(rules_config.rules), bus, executor_by_type)
+    state = GameState(compiled, bus, arbiter)
+    counts = ", ".join(f"{n} {t}" for t, n in compiled.counts().items())
+    logger.info(f"Rule engine ready: {len(compiled.monitors)} monitors ({counts})")
     # -------------------------
 
     def reload_rules(config: RulesConfig) -> bool:
         """Recompile rules saved from the editor. Returns True if a restart is still needed."""
-        rule_bus.reset()
+        bus.reset()
+        for executor in executors:
+            executor.reset()
         arbiter.clear_all()
         # Sounds from friends you follow fill in triggers your own rules don't cover
-        state.set_compiled_rules(compile_rules(config.rules + sharing.followed_rules(config.rules), rule_bus))
+        state.set_compiled_rules(
+            compile_rules(config.rules + sharing.followed_rules(config.rules), bus, executor_by_type)
+        )
         sound.set_default_volume(config.sound.volume / 100)
         # The lighting driver is built once at startup
         return config.lighting != rules_config.lighting
@@ -168,7 +178,8 @@ async def main(record: bool = False, on_stop: Callable[[Callable[[], None]], Non
         asyncio.create_task(publish_library(), name="library"),
         *[
             asyncio.create_task(coro, name=name)
-            for name, coro in executor.worker_coroutines(rule_bus).items()
+            for executor in executors
+            for name, coro in executor.workers().items()
         ],
         asyncio.create_task(
             serve(
@@ -177,7 +188,6 @@ async def main(record: bool = False, on_stop: Callable[[Callable[[], None]], Non
                 on_started=_open_editor,
                 recorder=recorder,
                 state=state,
-                rule_bus=rule_bus,
             ),
             name="http_server",
         ),
@@ -252,18 +262,18 @@ def _enter_app_dir() -> None:
     os.chdir(app_dir)
 
 
-def _run_with_tray(record: bool) -> None:
+def _run_with_tray(record: bool, debug: bool) -> None:
     """Run the app in a background thread and the tray icon on the main thread until either quits."""
     stoppers: list = []
     failure: list[BaseException] = []
     icon = tray.make_icon(lambda: _open_editor(BASE_URL, force=True), lambda: stoppers and stoppers[0]())
     if icon is None:
-        asyncio.run(main(record=record))
+        asyncio.run(main(record=record, debug=debug))
         return
 
     def app() -> None:
         try:
-            asyncio.run(main(record=record, on_stop=stoppers.append))
+            asyncio.run(main(record=record, debug=debug, on_stop=stoppers.append))
         except BaseException as e:
             failure.append(e)
         finally:
@@ -286,6 +296,7 @@ if __name__ == "__main__":
         sys.stdout = sys.stderr = open(os.devnull, "w", encoding="utf-8")
     _enter_app_dir()
     parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true", help="keep recent rule events in memory so /state (and the replay stepper) can show them")
     parser.add_argument("--record", action="store_true", help="keep incoming payloads in memory; /record/save writes them to recordings/*.jsonl")
     parser.add_argument("--no-browser", action="store_true", help="do not open the rules editor in the browser")
     parser.add_argument("--tray", action=argparse.BooleanOptionalAction, default=getattr(sys, "frozen", False),
@@ -294,9 +305,9 @@ if __name__ == "__main__":
     setup_logging()
     try:
         if args.tray:
-            _run_with_tray(args.record)
+            _run_with_tray(args.record, args.debug)
         else:
-            asyncio.run(main(record=args.record))
+            asyncio.run(main(record=args.record, debug=args.debug))
     except PortInUse:
         # Double-clicking the app again is the usual cause: show the running one instead
         if _app_already_running():

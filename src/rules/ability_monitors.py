@@ -1,30 +1,24 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
-from src.rules.monitor_base import StatefulMonitor
-from src.state.abilities import Abilities, Ability
+from src.rules.monitor_base import StateSnapshot, TargetedStatefulMonitor
+from src.rules.monitor_config import MonitorConfig, MonitorType
 
 if TYPE_CHECKING:
-    from src.rules.bus import RuleEventBus
+    from src.rules.bus import EventBus
 
 
-class AbilityMonitor(StatefulMonitor):
-    """Base class for ability monitors compiled from rules.
+class AbilityMonitorConfig(MonitorConfig):
+    type: Literal[MonitorType.ABILITY]
+    target: str  # internal ability name, e.g. "spectre_spectral_dagger"
+    event: Literal["COOLDOWN_STARTED"]
 
-    Each monitor receives the full Abilities snapshot and finds its target
-    ability by internal name (e.g. ``spectre_spectral_dagger``).
-    """
-
-    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
-        super().__init__(event_key, bus)
-        self._target = target
-
-    def evaluate(self, abilities: Abilities) -> None:
-        raise NotImplementedError
+    def _create(self, bus: EventBus, key: str) -> TargetedStatefulMonitor:
+        return ABILITY_MONITOR_REGISTRY[self.event](self.target, key, bus)
 
 
-class AbilityCooldownStartedMonitor(AbilityMonitor):
+class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
     """Active while the target ability is on cooldown, from the 0 to > 0 transition.
 
     Only tracks learned abilities (level > 0). max_cooldown is not used because
@@ -32,13 +26,16 @@ class AbilityCooldownStartedMonitor(AbilityMonitor):
     cooldown is the rule author's responsibility.
     """
 
-    def __init__(self, target: str, event_key: str, bus: RuleEventBus) -> None:
+    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
         super().__init__(target, event_key, bus)
         self._prev_cooldown: int | None = None
         self._slot_id: str | None = None
         self._transformed = False
 
-    def evaluate(self, abilities: Abilities) -> None:
+    def evaluate(self, snap: StateSnapshot) -> None:
+        abilities = snap.abilities
+        if abilities is None:
+            return
         ability = abilities.find(self._target)
         if ability is not None:
             self._slot_id = ability.slot_id
@@ -75,6 +72,6 @@ class AbilityCooldownStartedMonitor(AbilityMonitor):
 
 
 # Registry: event name → monitor class
-ABILITY_MONITOR_REGISTRY: dict[str, type[AbilityMonitor]] = {
+ABILITY_MONITOR_REGISTRY: dict[str, type[TargetedStatefulMonitor]] = {
     "COOLDOWN_STARTED": AbilityCooldownStartedMonitor,
 }

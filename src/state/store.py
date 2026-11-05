@@ -1,8 +1,9 @@
 import logging
 
 from src.lighting.arbiter import LightingArbiter
-from src.rules.bus import RuleEventBus
+from src.rules.bus import EventBus
 from src.rules.compiler import CompiledRules
+from src.rules.monitor_base import StateSnapshot
 from .abilities import Abilities, parse_abilities
 from .hero import HeroState, parse_hero
 from .items import Items, parse_items
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class GameState:
-    def __init__(self, compiled_rules: CompiledRules, rule_bus: RuleEventBus, light_arbiter: LightingArbiter):
+    def __init__(self, compiled_rules: CompiledRules, bus: EventBus, light_arbiter: LightingArbiter):
         self._version: int = 0
         self.raw: dict | None = None  # latest payload as received, for the /state debug endpoint
         self.items: Items | None = None
@@ -23,17 +24,16 @@ class GameState:
         self.hero: HeroState | None = None
 
         self._compiled_rules = compiled_rules
-        self._rule_bus = rule_bus  # stamped with game/clock time so emitted events carry it
+        self._bus = bus  # stamped with game/clock time so emitted events carry it
         self._light_arbiter = light_arbiter  # committed once per processed update
         self._prev_items: Items | None = None
-        self._prev_hero: HeroState | None = None
         self._abilities_logged: bool = False
 
     def update(self, data: dict):
         # This method is synchronous. Only CPU-bound operations (parsing, diffing,
         # state comparisons) belong here. For I/O-bound work such as playing sounds
-        # or controlling lights, monitors must emit an event onto RuleEventBus and
-        # let ActionExecutor handle it asynchronously.
+        # or controlling lights, monitors must emit an event onto the EventBus and
+        # let the action executors handle it (their workers run the async parts).
         self._version += 1
         self.raw = data
 
@@ -59,8 +59,19 @@ class GameState:
         self._handle_match_change(new_map)
         self.map = new_map
         self._log_abilities_once()
-        self._rule_bus.set_time(new_map.game_time, new_map.clock_time)
-        self._run_rule_monitors()
+        self._bus.game_time = new_map.game_time
+        self._bus.clock_time = new_map.clock_time
+        snap = StateSnapshot(
+            items=self.items,
+            prev_items=self._prev_items,
+            abilities=self.abilities,
+            hero=self.hero,
+            player=self.player,
+            map=self.map,
+        )
+        self._compiled_rules.evaluate_all(snap)
+        if self.items is not None:
+            self._prev_items = self.items
         self._light_arbiter.commit()
 
     def set_compiled_rules(self, compiled_rules: CompiledRules) -> None:
@@ -70,14 +81,24 @@ class GameState:
     def version(self) -> int:
         return self._version
 
+    def events(self) -> dict:
+        """Debug view of the bus: total events published and, in --debug mode, the most recent ones (oldest first)."""
+        return {
+            "enabled": self._bus.history is not None,
+            "published": self._bus.published,
+            "recent": [
+                {"key": e.key, "type": e.type.value, "game_time": e.game_time, "clock_time": e.clock_time}
+                for e in (self._bus.history or ())
+            ],
+        }
+
     def _handle_match_change(self, new_map: MapState | None) -> None:
         old_id = self.map.matchid if self.map else None
         new_id = new_map.matchid if new_map else None
         if new_id != old_id:
-            self._clear_monitors()
+            self._compiled_rules.clear_all()
             self._light_arbiter.clear_all()
             self._prev_items = None
-            self._prev_hero = None
             self._abilities_logged = False
             logger.info(f"Match changed from {old_id} to {new_id}")
 
@@ -87,36 +108,3 @@ class GameState:
         lines = "\n".join(f"  {a.name}" for a in self.abilities)
         logger.info(f"Hero abilities:\n{lines}")
         self._abilities_logged = True
-
-    def _clear_monitors(self) -> None:
-        for m in self._compiled_rules.item_monitors:
-            m.clear()
-        for m in self._compiled_rules.map_monitors:
-            m.clear()
-        for m in self._compiled_rules.hero_monitors:
-            m.clear()
-        for m in self._compiled_rules.ability_monitors:
-            m.clear()
-        for m in self._compiled_rules.periodic_monitors:
-            m.clear()
-
-    def _run_rule_monitors(self) -> None:
-        if self.map:
-            for monitor in self._compiled_rules.map_monitors:
-                monitor.evaluate(self.map)
-            for monitor in self._compiled_rules.periodic_monitors:
-                monitor.evaluate(self.map)
-
-        if self.items:
-            for monitor in self._compiled_rules.item_monitors:
-                monitor.evaluate(self.items, self._prev_items)
-            self._prev_items = self.items
-
-        if self.abilities:
-            for monitor in self._compiled_rules.ability_monitors:
-                monitor.evaluate(self.abilities)
-
-        if self.hero:
-            for monitor in self._compiled_rules.hero_monitors:
-                monitor.evaluate(self.hero)
-            self._prev_hero = self.hero

@@ -78,6 +78,7 @@ Capture real game data once, then replay it as often as you like without launchi
 
 ```bash
 uv run python -m src.main --record      # or the "App (record)" debug target
+uv run python -m src.main --debug       # keep recent rule events so the replay stepper can show them
 ```
 
 While recording, every incoming payload is kept in memory. Open (or POST to) `http://127.0.0.1:6969/record/save` to write them to `recordings/gsi_<timestamp>.jsonl`, one `{"ts": ..., "data": <payload>}` per line. The endpoint only exists in record mode, and each save contains everything since startup.
@@ -92,11 +93,11 @@ It POSTs the payloads to the running app using the recorded timing (`--speed` sc
 
 ### Step mode and notes
 
-`--step` turns replay into an interactive stepper: send the next N frames, jump to the next change (`c abilities.ability3`), show what changed (`d`), dump the app's raw state (`s [path]`), and see which rules fired. `h` lists the commands.
+`--step` turns replay into an interactive stepper: send the next N frames, jump to the next change (`c abilities.ability3`), show what changed (`d`), dump the app's raw state (`s [path]`). `h` lists the commands. Start the app with `--debug` and the stepper also prints the rule events each frame fired (`FIRED ...`) and `c` stops on them; the actions themselves are logged in `logs/dota2-integrations.log`.
 
 Frames can be annotated after recording: `note <text>` at the current frame writes `recordings/<file>.notes.json` (keyed by the frame's `ts`). A frame can also carry an inline `"note"` field in its jsonl line. On replay the note is injected into the POSTed JSON as a top-level `note` field; the app logs `GSI note: ...` and strips it before processing.
 
-The stepper reads `GET /state` on the app, which returns the latest raw payload and the rule events fired since the last call.
+The stepper reads `GET /state` on the app, which returns the latest raw payload plus, with `--debug`, the recent rule events.
 
 ## Dota 2 Configuration
 
@@ -136,10 +137,14 @@ Contents:
 
 ```
 src/
-├── main.py               # entry point
-├── core/runtime.py       # aiohttp server + asyncio event loop
-├── ingress/http_handler.py  # POST / handler
-└── state/store.py        # GameState — latest-snapshot store
+├── main.py            # entry point — wires everything, runs the asyncio tasks
+├── ingress/           # aiohttp server (POST /, GET /state, /record/save)
+├── state/             # GameState — latest-snapshot store and typed parsers
+├── rules/             # rule config, compiler, EventBus, monitors, and the light/sound/webhook executors
+├── lighting/          # LightingArbiter and vendor drivers
+└── sound/             # SoundManager
+tests/                 # pytest (uv run pytest)
+tools/replay.py        # replay and step through recordings
 ```
 
 ## Design

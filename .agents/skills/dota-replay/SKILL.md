@@ -17,7 +17,7 @@ Play, then open `http://127.0.0.1:6969/record/save`. It writes `recordings/gsi_<
 
 ## Replay
 
-Start the app normally (no `--record`), then in another terminal:
+Start the app with `--debug` (no `--record`; `--debug` lets the stepper show which rule events fired), then in another terminal:
 
 ```bash
 uv run python tools/replay.py recordings/x.jsonl                # recorded timing
@@ -32,15 +32,15 @@ Rules fire for real (sounds, lights, webhooks), so use a scratch `rules.json` wi
 | Command | Does |
 |---|---|
 | `<enter>` / `n [N]` | send the next N frames |
-| `c [prefix]` | send frames until a field changes (optionally only under a dotted path such as `abilities.ability3`) or a rule fires |
+| `c [prefix]` | send frames until a field changes (optionally only under a dotted path such as `abilities.ability3`) |
 | `d` | what changed in the last step |
 | `s [path]` | dump the app's raw state, or one dotted path of it |
 | `note <text>` | annotate the current frame |
 | `q` | quit |
 
-Each frame sent prints any rule events that fired (`FIRED rule=... event=...`) and its note, if it has one. The diff hides per-frame noise (`provider.timestamp`, `map.game_time`, `map.clock_time`, `previously.*`, `added.*`).
+Each frame sent prints its note, if it has one. Fired rules are not printed: look for `rule='<id>' ... -> ...` lines in `logs/dota2-integrations.log`. The diff hides per-frame noise (`provider.timestamp`, `map.game_time`, `map.clock_time`, `previously.*`, `added.*`).
 
-A good debugging loop: `c abilities.ability3` (or whatever field the rule depends on) to jump to the interesting frame, `d` to see exactly what changed, `s <path>` to look at the state the monitor saw, and compare with whether `FIRED` appeared.
+A good debugging loop: `c abilities.ability3` (or whatever field the rule depends on) to jump to the interesting frame, `d` to see exactly what changed, `s <path>` to look at the state the monitor saw, and compare with whether the rule's log line appeared.
 
 ## Debugging a monitor or rule
 
@@ -51,11 +51,11 @@ A worked example: the `centaur_work_horse` ability monitor stopped working once 
 3. **Name the assumption the monitor made that the data breaks.** Monitors encode assumptions (a name is stable, a slot never changes, a counter only goes up, `max_cooldown` is reliable). Compare each against the frames. Here: "an ability keeps its name", so the lookup failed mid-transform, state was reset, and the 0 -> cooldown transition was lost.
 4. **Decide what "correct" means before coding.** Working is not the same as right. The first fix made the monitor fire when the revert showed a cooldown (functionally correct, but late and unintuitive); what the player actually cares about is the click, which is the moment the ability is replaced. If the semantics are ambiguous, ask.
 5. **Fix generically.** Prefer a rule that follows the data (track the slot) over a hardcoded list of special cases (an alias table for one hero).
-6. **Verify by replaying the same recording.** Confirm the event fires at the intended frame, exactly once (`c` stops on `FIRED`), and that nothing fires on the later frames. A quick pass over other recordings checks you haven't broken the normal case.
+6. **Verify by replaying the same recording.** Confirm the event fires at the intended frame, exactly once (one log line for the frame), and that nothing fires on the later frames. A quick pass over other recordings checks you haven't broken the normal case.
 7. **State the limits.** Write down what the fix doesn't cover (e.g. other heroes whose abilities swap slots), so the next person knows where to look.
 
 Gotchas when reproducing:
-- A rule with no enabled actions is skipped at compile time and will never show `FIRED`; give the scratch rule a harmless action (a light needs a `priority`).
+- A rule with no enabled actions is skipped at compile time and will never fire or log; give the scratch rule a harmless action (a light needs a `priority`).
 - The app rewrites `rules.json` on load, so edit it with the app stopped.
 - Only one app can hold port 6969. If `/state` returns 404 or frames seem ignored, an older instance is probably still running.
 - `ts` is the stable key for a frame; frame numbers in the stepper are 1-based and shift if the recording is trimmed.
@@ -66,4 +66,4 @@ Gotchas when reproducing:
 
 ## Debug endpoint
 
-`GET /state` (always on) waits for queued payloads to be processed, then returns `{"version", "raw", "fired"}`: the latest raw payload and the rule events fired since the previous call. It drains `fired`, so the stepper is its only intended consumer.
+`GET /state` (always on) waits for queued payloads to be processed, then returns `{"version", "raw", "events"}`: the latest raw payload and the bus event counters. `events` has `enabled` (true only with `--debug`), `published` (total events) and `recent` (the last 100 events, oldest first, when enabled).

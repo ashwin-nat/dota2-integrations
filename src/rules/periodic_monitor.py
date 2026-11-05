@@ -1,13 +1,40 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from pydantic import Field, model_validator
+
+from src.rules.monitor_base import Monitor, StateSnapshot
+from src.rules.monitor_config import MonitorConfig, MonitorType
 
 if TYPE_CHECKING:
-    from src.rules.bus import RuleEventBus
-    from src.state.map import MapState
+    from src.rules.bus import EventBus
 
 
-class PeriodicMonitor:
+class PeriodicMonitorConfig(MonitorConfig):
+    """Fires every `period` seconds of game clock, shifted by `offset` seconds."""
+    type: Literal[MonitorType.PERIODIC]
+    period: int = Field(ge=1)
+    offset: int = Field(ge=-59, le=59, default=0)
+    # Game clock seconds (may be negative); only triggers inside [min_time, max_time] fire
+    min_time: int | None = None
+    max_time: int | None = None
+
+    @model_validator(mode="after")
+    def min_must_not_exceed_max(self) -> PeriodicMonitorConfig:
+        if self.min_time is not None and self.max_time is not None and self.min_time > self.max_time:
+            raise ValueError(f"min_time ({self.min_time}) cannot be greater than max_time ({self.max_time})")
+        return self
+
+    @property
+    def event(self) -> str:
+        return "TICK"
+
+    def _create(self, bus: EventBus, key: str) -> PeriodicMonitor:
+        return PeriodicMonitor(self.period, self.offset, key, bus, self.min_time, self.max_time)
+
+
+class PeriodicMonitor(Monitor):
     """Fires whenever the game clock passes a time t where t % period == offset % period.
 
     Clock time starts negative (pre-horn) but never goes backwards, so a trigger
@@ -22,7 +49,7 @@ class PeriodicMonitor:
         period: int,
         offset: int,
         event_key: str,
-        bus: RuleEventBus,
+        bus: EventBus,
         min_time: int | None = None,
         max_time: int | None = None,
     ) -> None:
@@ -34,8 +61,10 @@ class PeriodicMonitor:
         self._bus = bus
         self._prev_clock: int | None = None
 
-    def evaluate(self, map_state: MapState) -> None:
-        clock = map_state.clock_time
+    def evaluate(self, snap: StateSnapshot) -> None:
+        if snap.map is None:
+            return
+        clock = snap.map.clock_time
         prev, self._prev_clock = self._prev_clock, clock
         if prev is None:
             return

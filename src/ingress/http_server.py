@@ -7,7 +7,6 @@ from typing import Callable
 from aiohttp import web
 
 from src.recorder import Recorder
-from src.rules.bus import RuleEventBus
 from src.state.store import GameState
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,6 @@ async def serve(
     on_started: Callable[[str], None] | None = None,
     recorder: Recorder | None = None,
     state: GameState | None = None,
-    rule_bus: RuleEventBus | None = None,
 ) -> None:
     app = web.Application(client_max_size=25 * 1024 * 1024)
 
@@ -55,7 +53,7 @@ async def serve(
     if setup_app is not None:
         setup_app(app)
 
-    if state is not None and rule_bus is not None:
+    if state is not None:
         async def _state(request: web.Request) -> web.Response:
             # Wait until every queued payload has been processed so the dump is
             # deterministic right after a POST (the replay stepper relies on this).
@@ -63,7 +61,7 @@ async def serve(
             return web.json_response({
                 "version": state.version(),
                 "raw": state.raw,
-                "fired": rule_bus.drain_fired(),
+                "events": state.events(),
             })
 
         app.router.add_get("/state", _state)

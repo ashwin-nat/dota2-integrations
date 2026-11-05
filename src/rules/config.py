@@ -9,6 +9,11 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.media import resolve
+from src.rules.ability_monitors import AbilityMonitorConfig
+from src.rules.hero_monitor import HeroMonitorConfig
+from src.rules.item_monitors import BlinkMonitorConfig, ItemMonitorConfig, MidasMonitorConfig
+from src.rules.map_monitor import MapMonitorConfig
+from src.rules.periodic_monitor import PeriodicMonitorConfig
 
 
 # --- Action types ---
@@ -17,16 +22,6 @@ class ActionType(StrEnum):
     PLAY_SOUND  = "play_sound"
     LIGHT       = "light"
     WEBHOOK     = "webhook"
-
-
-class MonitorType(StrEnum):
-    ITEM  = "item"
-    MIDAS = "midas"
-    BLINK = "blink"
-    MAP   = "map"
-    HERO  = "hero"
-    ABILITY = "ability"
-    PERIODIC = "periodic"
 
 
 # --- Sound config ---
@@ -113,6 +108,7 @@ AnyAction = Annotated[
     Field(discriminator="type"),
 ]
 
+
 def sound_refs(action: dict) -> list[str]:
     """Sound files a raw (rules.json) action plays; empty for non-sound actions."""
     if action.get("type") != ActionType.PLAY_SOUND:
@@ -121,95 +117,19 @@ def sound_refs(action: dict) -> list[str]:
 
 
 # --- Monitor configs ---
-
-class MonitorConfig(BaseModel):
-    type: MonitorType
-
-
-class ItemMonitorConfig(MonitorConfig):
-    type: Literal[MonitorType.ITEM]
-    target: str
-    event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
-
-    @property
-    def event_key(self) -> str:
-        return f"__ITEM__{self.event}__{self.target}__"
-
-
-class MidasMonitorConfig(MonitorConfig):
-    """Monitor for Hand of Midas charge-specific events."""
-    type: Literal[MonitorType.MIDAS]
-    event: Literal["CHARGED", "OVERCHARGED"]
-
-    @property
-    def event_key(self) -> str:
-        return f"__MIDAS__{self.event}__"
-
-
-class BlinkMonitorConfig(MonitorConfig):
-    """Monitor for Blink Dagger item events."""
-    type: Literal[MonitorType.BLINK]
-    event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
-
-    @property
-    def event_key(self) -> str:
-        return f"__BLINK__{self.event}__"
-
-
-class MapMonitorConfig(MonitorConfig):
-    type: Literal[MonitorType.MAP]
-    event: Literal["DAYTIME_STARTED", "NIGHTTIME_STARTED", "PAUSED", "UNPAUSED"]
-
-    @property
-    def event_key(self) -> str:
-        return f"__MAP__{self.event}__"
-
-
-class HeroMonitorConfig(MonitorConfig):
-    type: Literal[MonitorType.HERO]
-    event: Literal["HERO_KILLED", "HERO_RESPAWNED"]
-
-    @property
-    def event_key(self) -> str:
-        return f"__HERO__{self.event}__"
-
-
-class AbilityMonitorConfig(MonitorConfig):
-    type: Literal[MonitorType.ABILITY]
-    target: str  # internal ability name, e.g. "spectre_spectral_dagger"
-    event: Literal["COOLDOWN_STARTED"]
-
-    @property
-    def event_key(self) -> str:
-        return f"__ABILITY__{self.event}__{self.target}__"
-
-
-class PeriodicMonitorConfig(MonitorConfig):
-    """Fires every `period` seconds of game clock, shifted by `offset` seconds."""
-    type: Literal[MonitorType.PERIODIC]
-    period: int = Field(ge=1)
-    offset: int = Field(ge=-59, le=59, default=0)
-    # Game clock seconds (may be negative); only triggers inside [min_time, max_time] fire
-    min_time: int | None = None
-    max_time: int | None = None
-
-    @model_validator(mode="after")
-    def min_must_not_exceed_max(self) -> PeriodicMonitorConfig:
-        if self.min_time is not None and self.max_time is not None and self.min_time > self.max_time:
-            raise ValueError(f"min_time ({self.min_time}) cannot be greater than max_time ({self.max_time})")
-        return self
-
-    @property
-    def event(self) -> str:
-        return "TICK"
-
-    @property
-    def event_key(self) -> str:
-        return f"__PERIODIC__{self.period}__{self.offset}__{self.min_time}__{self.max_time}__"
-
+# Each monitor's config model lives next to its monitor class. This is the one
+# place that lists them all, so pydantic can pick the right one from `type`.
 
 AnyMonitor = Annotated[
-    Union[ItemMonitorConfig, MidasMonitorConfig, BlinkMonitorConfig, MapMonitorConfig, HeroMonitorConfig, AbilityMonitorConfig, PeriodicMonitorConfig],
+    Union[
+        ItemMonitorConfig,
+        MidasMonitorConfig,
+        BlinkMonitorConfig,
+        MapMonitorConfig,
+        HeroMonitorConfig,
+        AbilityMonitorConfig,
+        PeriodicMonitorConfig,
+    ],
     Field(discriminator="type"),
 ]
 
@@ -240,13 +160,23 @@ class RulesConfig(BaseModel):
     lighting: LightingConfig = Field(default_factory=LightingConfig)
 
     @model_validator(mode="after")
+    def validate_unique_ids(self) -> RulesConfig:
+        # A rule's id is the key its monitor publishes under, so it must be unique
+        seen: set[str] = set()
+        for rule in self.rules:
+            if rule.id in seen:
+                raise ValueError(f"Rule id {rule.id!r} is used by more than one rule")
+            seen.add(rule.id)
+        return self
+
+    @model_validator(mode="after")
     def validate_light_priorities(self) -> RulesConfig:
         seen: dict[int, str] = {}
         for rule in self.rules:
             for action in rule.actions:
                 if not (isinstance(action, LightAction) and action.enabled):
                     continue
-                if rule.monitor.type == MonitorType.MAP:
+                if not rule.monitor.takes_light_priority:
                     if action.priority is not None:
                         raise ValueError(
                             f"Rule {rule.id!r}: priority cannot be set on map monitors (they are the baseline)"
