@@ -106,7 +106,7 @@ Create a config file at:
 <Steam>/steamapps/common/dota 2 beta/game/dota/cfg/gamestate_integration/gamestate_integration_myapp.cfg
 ```
 
-Minimum contents:
+Contents:
 
 ```
 "soundbo"
@@ -118,12 +118,16 @@ Minimum contents:
     "heartbeat"     "30.0"
     "data"
     {
+        "buildings"     "1"
         "provider"      "1"
         "map"           "1"
         "player"        "1"
         "hero"          "1"
         "abilities"     "1"
         "items"         "1"
+        "draft"         "1"
+        "wearables"     "1"
+        "events"        "1"
     }
 }
 ```

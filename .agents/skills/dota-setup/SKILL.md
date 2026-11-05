@@ -37,12 +37,16 @@ Otherwise write `gamestate_integration_soundbo.cfg`:
     "heartbeat"     "30.0"
     "data"
     {
+        "buildings"     "1"
         "provider"      "1"
         "map"           "1"
         "player"        "1"
         "hero"          "1"
         "abilities"     "1"
         "items"         "1"
+        "draft"         "1"
+        "wearables"     "1"
+        "events"        "1"
     }
 }
 ```
