@@ -81,18 +81,29 @@ def dota_cfg_dirs() -> list[Path]:
 
 
 def install_gsi_config(port: int) -> list[Path]:
-    """Write the config into every Dota install that doesn't send to this port yet."""
+    """Keep our cfg in every Dota install current, and add one where nothing sends to this port.
+
+    Our own file is rewritten whenever it differs from the template (new topics, new port).
+    Other tools' cfgs are never touched; if one already sends to this port, we add nothing.
+    """
+    content = CFG_TEMPLATE.format(port=port)
     written = []
     for cfg in dota_cfg_dirs():
         folder = cfg / "gamestate_integration"
         try:
             folder.mkdir(exist_ok=True)
-            ours = re.compile(rf"(127\.0\.0\.1|localhost):{port}\b")
-            if any(ours.search(f.read_text(encoding="utf-8", errors="replace")) for f in folder.glob("gamestate_integration_*.cfg")):
-                continue
-            (folder / CFG_NAME).write_text(CFG_TEMPLATE.format(port=port), encoding="utf-8")
-            written.append(folder / CFG_NAME)
-            logger.info(f"Set up Dota 2 to send game state here: {folder / CFG_NAME} (restart Dota if it's running)")
+            target = folder / CFG_NAME
+            existed = target.exists()
+            if existed:
+                if target.read_text(encoding="utf-8") == content:
+                    continue
+            else:
+                ours = re.compile(rf"(127\.0\.0\.1|localhost):{port}(?!\d)")
+                if any(ours.search(f.read_text(encoding="utf-8", errors="replace")) for f in folder.glob("gamestate_integration_*.cfg")):
+                    continue
+            target.write_text(content, encoding="utf-8")
+            written.append(target)
+            logger.info(f"{'Upgraded' if existed else 'Set up'} Dota 2 game state config: {target} (restart Dota if it's running)")
         except OSError as e:
             logger.warning(f"Could not write the Dota 2 config in {folder}: {e}")
     return written
