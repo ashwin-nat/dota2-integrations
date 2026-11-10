@@ -1932,7 +1932,23 @@ function renderInspector() {
   ].filter(Boolean));
 }
 
-const addSoundButton = (add) => h("button", { class: "btn btn-sm", disabled: !S.media[0], onclick: () => add({ type: "play_sound", enabled: true, clips: [{ file: S.media[0].file, probability: 100, volume: 50 }] }) }, icon("sound"), "Sound");
+// New variant takes an even share; the others shrink in proportion
+function addClipVariant(clips) {
+  const share = Math.floor(100 / (clips.length + 1));
+  const rest = 100 - share;
+  const scaled = clips.map((c) => (c.probability * rest) / 100);
+  const floors = scaled.map(Math.floor);
+  let left = rest - floors.reduce((s, v) => s + v, 0);
+  scaled.map((v, i) => [v - floors[i], i]).sort((x, y) => y[0] - x[0]).forEach(([, i]) => { if (left > 0) { floors[i]++; left--; } });
+  clips.forEach((c, i) => { c.probability = floors[i]; });
+  const pick = S.media.find((m) => !clips.some((c) => c.file === m.file)) || S.media[0];
+  clips.push({ file: pick.file, probability: share, volume: clips[clips.length - 1].volume });
+}
+
+// If the trigger already plays a sound, "Sound" adds a variant to that action instead of a second one
+const addSoundButton = (add, existing) => h("button", { class: "btn btn-sm", disabled: !S.media[0],
+  title: existing ? "Add another sound to this one as a variant" : "Play a sound",
+  onclick: () => existing ? add(null, () => addClipVariant(existing.clips)) : add({ type: "play_sound", enabled: true, clips: [{ file: S.media[0].file, probability: 100, volume: 50 }] }) }, icon("sound"), existing ? "Sound (variant)" : "Sound");
 
 // The schedule a reminder had before Repeats was flipped, so flipping it back restores it
 const otherSchedule = new Map();
@@ -1996,7 +2012,7 @@ function renderEventBody(ev) {
   const actions = rules.flatMap((r) => r.actions.map((a) => ({ rule: r, action: a })));
   const changed = () => { markDirty(); render(); };
 
-  const add = (action) => { (ev.rule || ensureRule(monitor)).actions.push(action); changed(); };
+  const add = (action, mutate) => { if (mutate) mutate(); else (ev.rule || ensureRule(monitor)).actions.push(action); changed(); };
   const what = ev.rule ? "reminder" : rules.length > 1 ? `${rules.length} rules` : "rule";
   // Only rules change here and nothing is final until Save, so no confirm box
   const removeRules = () => {
@@ -2013,7 +2029,7 @@ function renderEventBody(ev) {
     h("p", { class: "event-desc" }, ev.desc),
     actions.length ? actions.map(({ rule, action }) => renderAction(rule, action, monitor, changed)) : h("p", { class: "hint" }, "Nothing happens yet. Add a sound or a light:"),
     h("div", { class: "add-row" },
-      addSoundButton(add),
+      addSoundButton(add, actions.map((x) => x.action).find((a) => a.type === "play_sound")),
       h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, icon("light"), "Light"),
       h("button", { class: "btn btn-sm btn-ghost", onclick: () => add({ type: "webhook", enabled: true, url: "https://", api_key: null, auth_type: null, timeout: 2, cooldown: 0 }) }, icon("webhook"), "Webhook")),
     rules.length ? h("button", { class: "btn btn-sm btn-delete", onclick: removeRules }, icon("trash"), `Delete ${what}`) : null,
@@ -2157,18 +2173,7 @@ function renderAction(rule, a, monitor, changed) {
         known ? null : h("div", { class: "missing-note" }, "This file isn't in media/ yet. Drop a clip onto this card to add it."));
     });
 
-    const addVariant = () => { // new variant takes an even share; the others shrink in proportion
-      const share = Math.floor(100 / (clips.length + 1));
-      const rest = 100 - share;
-      const scaled = clips.map((c) => (c.probability * rest) / 100);
-      const floors = scaled.map(Math.floor);
-      let left = rest - floors.reduce((s, v) => s + v, 0);
-      scaled.map((v, i) => [v - floors[i], i]).sort((x, y) => y[0] - x[0]).forEach(([, i]) => { if (left > 0) { floors[i]++; left--; } });
-      clips.forEach((c, i) => { c.probability = floors[i]; });
-      const pick = S.media.find((m) => !clips.some((c) => c.file === m.file)) || S.media[0];
-      clips.push({ file: pick.file, probability: share, volume: clips[clips.length - 1].volume });
-      changed();
-    };
+    const addVariant = () => { addClipVariant(clips); changed(); };
     const equalize = () => {
       const base = Math.floor(100 / clips.length), extra = 100 - base * clips.length;
       clips.forEach((c, i) => { c.probability = base + (i < extra ? 1 : 0); });
