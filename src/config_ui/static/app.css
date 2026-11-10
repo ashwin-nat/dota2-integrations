@@ -630,7 +630,8 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 .emoji-jumps { display: flex; gap: 2px; margin: 6px 0; }
 .emoji-jumps button, .emoji-grid button { width: 32px; height: 32px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: none; cursor: pointer; font-size: 20px; line-height: 1; }
 .emoji-jumps button:hover, .emoji-grid button:hover { background: var(--panel-3); border-color: var(--line-2); }
-.emoji-scroll { max-height: 240px; overflow-y: auto; }
+.emoji-scroll { height: 240px; overflow-y: auto; } /* fixed, so a short or empty result doesn't shrink the dialog */
+.emoji-scroll > .hint { margin: 12px 4px; }
 .emoji-group { position: sticky; top: 0; padding: 4px 2px; background: var(--panel-2); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 2px; }
 
