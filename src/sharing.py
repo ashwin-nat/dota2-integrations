@@ -25,7 +25,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ValidationError
 
 from src import packs, shortcuts
-from src.media import LOCAL_MEDIA_DIR, media_ref, set_media_dir, unique_path
+from src.media import LOCAL_MEDIA_DIR, media_dir, media_ref, set_media_dir, unique_path
 from src.rules.config import ActionType, Rule, RulesConfig, sound_refs
 
 logger = logging.getLogger(__name__)
@@ -94,6 +94,20 @@ def load() -> SharingSettings:
     LOCAL_MEDIA_DIR.mkdir(exist_ok=True)
     _restore_missing_media()
     return _settings
+
+
+def reconnect() -> bool:
+    """Switch to the shared folder if it has appeared since load() (Drive mounted late).
+
+    Returns True if it switched, so the caller can reload rules and warm the cache.
+    """
+    folder = shared_folder()
+    if not folder or media_dir() == folder / "media" or not folder.is_dir():
+        return False
+    set_media_dir(folder / "media")
+    _restore_missing_media()
+    logger.info(f"Shared folder {folder} is available again; playing sounds from it")
+    return True
 
 
 def _referenced_media() -> set[str]:
@@ -246,7 +260,9 @@ def configure(folder: str | None, name: str, create: bool = False) -> dict:
         raise SharingError(f"Someone else in this folder already uses the name {name!r}. Pick another.")
 
     (path / PEOPLE_DIR).mkdir(exist_ok=True)
-    copied = _bring_media(LOCAL_MEDIA_DIR, path / "media")
+    # From wherever your rules' sounds are now: local media/, or the folder you're leaving
+    current = media_dir()
+    copied = _bring_media(current, path / "media") if current.resolve() != (path / "media").resolve() else 0
     old = shared_folder()
     if old and old != path and _settings.name:
         # Leave the old folder clean if we moved
@@ -256,8 +272,9 @@ def configure(folder: str | None, name: str, create: bool = False) -> dict:
     _settings = _settings.model_copy(update={"folder": str(path), "name": name})
     _save()
     set_media_dir(path / "media")
-    publish()
-    logger.info(f"Sharing on: {path} as {name} ({copied} local sounds copied in)")
+    # Sharing is on whatever happens next; a rule with a missing sound only stops the publish
+    publish_safely()
+    logger.info(f"Sharing on: {path} as {name} ({copied} sounds copied in)")
     return {"copied": copied}
 
 

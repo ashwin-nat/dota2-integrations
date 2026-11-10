@@ -80,7 +80,7 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
 
     def recompile() -> None:
         # The media folder or followed friends changed; rebuild the engine from disk
-        reload(RulesConfig.load(rules_path))
+        reload(RulesConfig.load(rules_path, allow_missing_sounds=True))
 
     # Everything here touches the shared folder, which can be slow (a cloud drive fetching
     # listings) or held up by a macOS permission prompt, so it runs off the event loop and

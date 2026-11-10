@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Union
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from src.media import resolve
 from src.rules.ability_monitors import AbilityMonitorConfig
@@ -14,6 +15,8 @@ from src.rules.hero_monitor import HeroMonitorConfig
 from src.rules.item_monitors import BlinkMonitorConfig, ItemMonitorConfig, MidasMonitorConfig
 from src.rules.map_monitor import MapMonitorConfig
 from src.rules.periodic_monitor import OnceMonitorConfig, PeriodicMonitorConfig
+
+logger = logging.getLogger(__name__)
 
 
 # --- Action types ---
@@ -155,9 +158,13 @@ class Rule(BaseModel):
     monitor: AnyMonitor
     actions: list[AnyAction]
 
-    # Checked here rather than on the action so the error can name the rule
+    # Checked here rather than on the action so the error can name the rule. Loading with
+    # context {"allow_missing_sounds": True} skips it: the app still starts when a synced
+    # folder is late or a friend's file is gone, and SoundExecutor skips what isn't there.
     @model_validator(mode="after")
-    def sound_files_must_exist(self) -> Rule:
+    def sound_files_must_exist(self, info: ValidationInfo) -> Rule:
+        if info.context and info.context.get("allow_missing_sounds"):
+            return self
         for action in self.actions:
             if isinstance(action, PlaySoundAction):
                 for clip in action.clips:
@@ -205,16 +212,32 @@ class RulesConfig(BaseModel):
                 seen[action.priority] = rule.id
         return self
 
+    def missing_sounds(self) -> list[tuple[str, str]]:
+        """(rule id, file) for every sound file that isn't on disk."""
+        return [
+            (rule.id, clip.file)
+            for rule in self.rules for action in rule.actions if isinstance(action, PlaySoundAction)
+            for clip in action.clips if not resolve(clip.file).is_file()
+        ]
+
     @classmethod
-    def load(cls, path: Path) -> RulesConfig:
-        """Load and parse rules.json, writing back any missing keys with their defaults."""
+    def load(cls, path: Path, allow_missing_sounds: bool = False) -> RulesConfig:
+        """Load and parse rules.json, writing back any missing keys with their defaults.
+
+        With allow_missing_sounds, a sound file that isn't there is logged instead of failing
+        (for the running app; the editor's save still refuses it).
+        """
         if not path.exists():
             config = cls()
             path.write_text(config.model_dump_json(indent=4))
             return config
         raw = path.read_text(encoding="utf-8")
         data = json.loads(raw)
-        config = cls.model_validate(data)
+        config = cls.model_validate(data, context={"allow_missing_sounds": allow_missing_sounds})
+        if allow_missing_sounds and (missing := config.missing_sounds()):
+            shown = ", ".join(f"{file} ({rule})" for rule, file in missing[:10])
+            more = f" and {len(missing) - 10} more" if len(missing) > 10 else ""
+            logger.warning(f"{len(missing)} sound file(s) not found; those sounds won't play until they're back: {shown}{more}")
         dumped = config.model_dump()
         if dumped != data:
             path.write_text(json.dumps(dumped, indent=4))

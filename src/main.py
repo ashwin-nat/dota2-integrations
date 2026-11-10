@@ -60,7 +60,8 @@ async def main(
 
     sharing.load()
     try:
-        rules_config = RulesConfig.load(RULES_PATH)
+        # A missing sound only logs: Google Drive may not have mounted yet, or a friend's file is gone
+        rules_config = RulesConfig.load(RULES_PATH, allow_missing_sounds=True)
     except ValidationError as e:
         for err in e.errors():
             logger.error(f"rules.json: {err['msg'].removeprefix('Value error, ')}")
@@ -110,12 +111,19 @@ async def main(
         seen = sharing.followed_signature()
         while True:
             await asyncio.sleep(5)
+            if await asyncio.to_thread(sharing.reconnect):
+                # The shared folder appeared after startup (Drive mounted late): play from it now
+                try:
+                    reload_rules(RulesConfig.load(RULES_PATH, allow_missing_sounds=True))
+                except Exception as e:
+                    logger.warning(f"Could not reload rules: {e}")
+                asyncio.get_running_loop().run_in_executor(None, sharing.warm_cache)
             current = await asyncio.to_thread(sharing.followed_signature)
             if current != seen:
                 seen = current
                 logger.info("A followed friend's rules changed; reloading")
                 try:
-                    reload_rules(RulesConfig.load(RULES_PATH))
+                    reload_rules(RulesConfig.load(RULES_PATH, allow_missing_sounds=True))
                 except Exception as e:
                     # Ending this task would shut the app down
                     logger.warning(f"Could not reload rules: {e}")
