@@ -67,7 +67,7 @@ button, input, select { font: inherit; color: inherit; }
   font-family: "Cinzel", serif;
   font-weight: 800;
   letter-spacing: .12em;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--gold-hi);
   text-transform: uppercase;
 }
@@ -75,16 +75,29 @@ button, input, select { font: inherit; color: inherit; }
   font-family: "Barlow Condensed", sans-serif;
   text-transform: uppercase;
   letter-spacing: .14em;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 
 .topbar-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.topbar .toggle, .topbar .status { font-size: 14px; }
+.topbar select { font-size: 14px; }
+
+/* Bigger screens sit further away: scale the top bar up */
+@media (min-width: 1600px) {
+  .topbar { padding: 12px 24px; }
+  .brand-mark { font-size: 30px; }
+  .brand-title { font-size: 23px; }
+  .brand-sub { font-size: 13px; }
+  .topbar .master-vol, .topbar .toggle, .topbar .status, .topbar select { font-size: 15px; }
+  .topbar .btn { min-height: 38px; }
+  .topbar .btn-icon, .topbar .btn-power { width: 38px; }
+}
 
 .master-vol {
   display: flex; align-items: center; gap: 8px;
   font-family: "Barlow Condensed", sans-serif;
-  text-transform: uppercase; letter-spacing: .08em; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em; font-size: 14px; color: var(--muted);
 }
 .master-vol output { width: 34px; color: var(--text); font-variant-numeric: tabular-nums; }
 
@@ -611,6 +624,15 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 .sb-picks { display: flex; flex-wrap: wrap; gap: 2px; flex: 1; }
 .sb-picks button { width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: none; cursor: pointer; font-size: 16px; }
 .sb-picks button:hover { background: var(--panel-3); border-color: var(--line-2); }
+.sb-picks .sb-more { width: auto; padding: 0 8px; font-size: 12px; color: var(--muted); }
+.emoji-browser { margin: 8px 0 0 72px; padding: 8px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--panel-2); }
+.emoji-browser input[type=search] { width: 100%; }
+.emoji-jumps { display: flex; gap: 2px; margin: 6px 0; }
+.emoji-jumps button, .emoji-grid button { width: 32px; height: 32px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: none; cursor: pointer; font-size: 20px; line-height: 1; }
+.emoji-jumps button:hover, .emoji-grid button:hover { background: var(--panel-3); border-color: var(--line-2); }
+.emoji-scroll { max-height: 240px; overflow-y: auto; }
+.emoji-group { position: sticky; top: 0; padding: 4px 2px; background: var(--panel-2); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 2px; }
 
 @media (max-width: 1100px) {
   .layout.no-inspector { grid-template-columns: 150px minmax(0, 1fr); }
@@ -642,6 +664,30 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 .share-who strong { color: var(--gold-hi); }
 .share-who code { word-break: break-all; }
 .share-empty { margin-top: 16px; }
+
+/* Friends tab: larger, brighter text (it's mostly reading) */
+.board[data-tab="friends"] { font-size: 15px; }
+.board[data-tab="friends"] .hint,
+.board[data-tab="friends"] .share-steps,
+.board[data-tab="friends"] .join-steps,
+.board[data-tab="friends"] .friend-rules summary { font-size: 14px; color: #a9b2bd; }
+.board[data-tab="friends"] .rule-row .trig .t { font-size: 17px; }
+.board[data-tab="friends"] .rule-row .trig .s,
+.board[data-tab="friends"] .chip,
+.board[data-tab="friends"] .have { font-size: 13px; }
+.board[data-tab="friends"] .rule-row .trig .s { color: #a9b2bd; }
+.board[data-tab="friends"] .friend-name strong { font-size: 18px; }
+.board[data-tab="friends"] .btn-sm { font-size: 13px; min-height: 30px; }
+@media (min-width: 1600px) {
+  .board[data-tab="friends"] { font-size: 16px; }
+  .board[data-tab="friends"] .hint,
+  .board[data-tab="friends"] .share-steps,
+  .board[data-tab="friends"] .join-steps,
+  .board[data-tab="friends"] .friend-rules summary,
+  .board[data-tab="friends"] .rule-row .trig .s,
+  .board[data-tab="friends"] .chip { font-size: 15px; }
+  .board[data-tab="friends"] .rule-row .trig .t { font-size: 18px; }
+}
 
 .friend {
   margin-top: 16px; padding: 12px 14px;

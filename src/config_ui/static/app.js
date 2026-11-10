@@ -543,6 +543,7 @@ function render() {
   const scroll = board.scrollTop;
   // The soundboard and Friends tabs don't use the inspector, so they get its width too
   $(".layout").classList.toggle("no-inspector", S.tab === "soundboard" || S.tab === "friends");
+  board.dataset.tab = S.tab; // lets a tab tune its own text size
   board.replaceChildren(...[({ rules: renderRules, items: renderItems, heroes: renderHeroes, events: renderEvents, sounds: renderSounds, soundboard: renderSoundboard, friends: renderFriends }[S.tab])()].flat().filter(Boolean));
   board.scrollTop = scroll;
   renderInspector();
@@ -854,7 +855,69 @@ function makeDropTarget(el, onFiles, accept = (f) => /\.(mp3|wav|ogg)$/i.test(f.
 
 const CLIP_ACCEPT = "audio/*,video/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus,.mp4,.mov,.webm,.mkv";
 const isClipSource = (f) => /^(audio|video)\//.test(f.type) || /\.(mp3|wav|ogg|m4a|aac|flac|opus|mp4|mov|webm|mkv)$/i.test(f.name);
-const EMOJI_PICKS = ["🔊", "😂", "💀", "🔥", "😱", "🤡", "👀", "💩", "📢", "🎺", "🥁", "💥", "⚡", "🧊", "👑", "🐐"];
+const EMOJI_PICKS = ["🔊", "😂", "💀", "🔥", "😱", "🤡", "👀", "💩", "📢", "🎺", "🥁", "💥", "⚡", "🧊", "👑", "🐐", "🐶"];
+
+// Every emoji (EMOJI_GROUPS from emoji.js) with search and a jump row per group; built when opened
+let emojiIndex = null;
+function emojiEntries() {
+  emojiIndex ||= EMOJI_GROUPS.flatMap(([label, lines]) => lines.split("\n").map((line) => {
+    const [e, name, keywords = ""] = line.split("|");
+    return { e, name, label, nameWords: name.toLowerCase().split(/[\s:,.’'-]+/).filter(Boolean), keyWords: keywords.split(/\s+/).filter(Boolean) };
+  }));
+  return emojiIndex;
+}
+
+// Every search word must match the start of a word in the name or keywords; whole-word and name matches rank first
+function emojiScore(entry, terms, query) {
+  if (entry.e === query) return 1000;
+  let score = entry.name.toLowerCase() === query ? 500 : 0;
+  for (const t of terms) {
+    const best = entry.nameWords.includes(t) ? 100
+      : entry.keyWords.includes(t) ? 70
+      : entry.nameWords.some((w) => w.startsWith(t)) ? 50
+      : entry.keyWords.some((w) => w.startsWith(t)) ? 30
+      : t.length >= 3 && entry.name.toLowerCase().includes(t) ? 10 : 0;
+    if (!best) return 0;
+    score += best;
+  }
+  return score - entry.nameWords.length; // shorter names are usually the plain emoji (dog before guide dog)
+}
+
+function emojiBrowser(onPick) {
+  const entries = emojiEntries();
+  const search = h("input", { type: "search", placeholder: "Search, like dog, lol, rage or money", "aria-label": "Search emoji" });
+  const body = h("div", { class: "emoji-scroll" });
+  const grid = (list) => h("div", { class: "emoji-grid" }, list.map((x) => h("button", { type: "button", title: x.name, "aria-label": x.name, "data-emoji": x.e }, x.e)));
+  const fill = () => {
+    const query = search.value.trim().toLowerCase();
+    if (!query) {
+      const groups = [...new Set(entries.map((x) => x.label))];
+      body.replaceChildren(...groups.flatMap((label) => [h("div", { class: "emoji-group", "data-group": label }, label), grid(entries.filter((x) => x.label === label))]));
+    } else {
+      const terms = query.split(/[\s,]+/).filter(Boolean);
+      const hits = entries.map((x, i) => ({ x, i, s: emojiScore(x, terms, query) })).filter((r) => r.s > 0).sort((a, b) => b.s - a.s || a.i - b.i).map((r) => r.x);
+      body.replaceChildren(...(hits.length
+        ? [h("div", { class: "emoji-group" }, `${hits.length} ${hits.length === 1 ? "match" : "matches"}`), grid(hits)]
+        : [h("p", { class: "hint" }, "No emoji matches that.")]));
+    }
+    body.scrollTop = 0;
+  };
+  body.addEventListener("click", (e) => { const b = e.target.closest("button[data-emoji]"); if (b) onPick(b.dataset.emoji); });
+  search.addEventListener("input", fill);
+  search.addEventListener("keydown", (e) => {
+    // Enter picks the best match
+    if (e.key === "Enter") { e.preventDefault(); const first = body.querySelector("button[data-emoji]"); if (first && search.value.trim()) onPick(first.dataset.emoji); }
+  });
+  const labels = [...new Set(entries.map((x) => x.label))];
+  const jumps = h("div", { class: "emoji-jumps" }, labels.map((label) => h("button", { type: "button", title: label, "aria-label": label,
+    onclick: () => {
+      if (search.value) { search.value = ""; fill(); }
+      body.querySelector(`[data-group="${label}"]`)?.scrollIntoView({ block: "start" });
+    } }, entries.find((x) => x.label === label).e)));
+  fill();
+  setTimeout(() => search.focus());
+  return h("div", { class: "emoji-browser" }, search, jumps, body);
+}
 // The trim view shows at most this much audio; longer sources also get an overview strip
 const TRIM_VIEW_SECONDS = 15;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -893,10 +956,22 @@ function applyClipFileChange(from, to) {
   renderStatus();
 }
 
+// Each sound can't be started again until it has finished (spam clicks and held keys are ignored).
+// Keyed by file, so the lock survives re-renders and covers a friend's tile for the same sound.
+const playingUntil = new Map();
+function claimPlay(file, seconds) {
+  const now = Date.now();
+  if ((playingUntil.get(file) || 0) > now) return false;
+  playingUntil.set(file, now + Math.max(seconds || 0, 0.3) * 1000);
+  return true;
+}
+
 async function playClip(clip, tile) {
+  if (!claimPlay(clip.file, clip.duration)) return;
   try {
     await api(`/api/soundboard/${clip.id}/play`, { method: "POST" });
   } catch (e) {
+    playingUntil.delete(clip.file);
     toast(`Couldn't play ${clip.name}: ${e.message}`, "err");
     return;
   }
@@ -936,7 +1011,7 @@ function renderSoundboard() {
 
   return [
     h("div", { class: "board-head" }, h("h1", {}, "Soundboard"), search,
-      h("button", { class: "btn btn-sm", title: "Stop every sound playing on this PC", onclick: () => api("/api/soundboard/stop", { method: "POST" }) }, "■ Stop all"),
+      h("button", { class: "btn btn-sm", title: "Stop every sound playing on this PC", onclick: () => { playingUntil.clear(); api("/api/soundboard/stop", { method: "POST" }); } }, "■ Stop all"),
       h("button", { class: "btn btn-gold btn-sm", onclick: () => openClipEditor() }, icon("plus"), "Add sound")),
     h("p", { class: "hint" }, `Click a sound to play it on this PC's speakers. ▶ previews it in the browser only. Clips can be up to ${S.maxClip} seconds, cut from an audio file, a video, or a YouTube link. Each clip is saved as an MP3 named after it, so you can also pick it as the sound for items, abilities and game events.`),
     grid,
@@ -1003,7 +1078,13 @@ function openClipEditor({ clip, file } = {}) {
     volOut.value = `${vol.value}%`;
     if (preview) preview.gain.gain.value = vol.value / 100;
   });
-  const picks = h("div", { class: "sb-picks" }, EMOJI_PICKS.map((e) => h("button", { type: "button", onclick: () => { emoji.value = e; } }, e)));
+  const browserSlot = h("div");
+  const moreEmoji = h("button", { type: "button", class: "sb-more", title: "All emoji", "aria-expanded": "false", onclick: () => {
+    const open = !browserSlot.firstChild;
+    browserSlot.replaceChildren(...(open ? [emojiBrowser((e) => { emoji.value = e; browserSlot.replaceChildren(); moreEmoji.setAttribute("aria-expanded", "false"); })] : []));
+    moreEmoji.setAttribute("aria-expanded", String(open));
+  } }, "More…");
+  const picks = h("div", { class: "sb-picks" }, EMOJI_PICKS.map((e) => h("button", { type: "button", onclick: () => { emoji.value = e; } }, e)), moreEmoji);
 
   const source = h("div", { class: "sb-source" });
   const submit = h("button", { class: "btn btn-gold", disabled: !clip, onclick: onSubmit }, clip ? "Save" : "Add to soundboard");
@@ -1030,6 +1111,7 @@ function openClipEditor({ clip, file } = {}) {
       h("div", { class: "sb-fields" },
         h("label", { class: "field" }, h("span", { class: "lbl" }, "Name"), name),
         h("div", { class: "field" }, h("span", { class: "lbl" }, "Emoji"), emoji, picks),
+        browserSlot,
         h("label", { class: "field" }, h("span", { class: "lbl" }, "Volume"), vol, volOut)),
       h("div", { class: "modal-foot" },
         clip ? h("button", { class: "btn btn-ghost btn-danger", onclick: onDelete }, "Delete") : null,
@@ -1773,10 +1855,11 @@ function renderFriendClips() {
 }
 
 async function playFriendClip(c, tile) {
-  if (!hasMedia(c.file)) return;
+  if (!hasMedia(c.file) || !claimPlay(c.file, c.duration)) return;
   try {
     await api("/api/play", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: c.file, volume: c.volume }) });
   } catch (e) {
+    playingUntil.delete(c.file);
     toast(`Couldn't play ${c.name}: ${e.message}`, "err");
     return;
   }
@@ -1915,9 +1998,8 @@ function renderEventBody(ev) {
 
   const add = (action) => { (ev.rule || ensureRule(monitor)).actions.push(action); changed(); };
   const what = ev.rule ? "reminder" : rules.length > 1 ? `${rules.length} rules` : "rule";
-  // Only rules change here; sound files stay in the library
+  // Only rules change here and nothing is final until Save, so no confirm box
   const removeRules = () => {
-    if (actions.length && !confirm(`Delete this ${what} and its ${plural(actions.length, "action")}? Your sound files stay.`)) return;
     for (const r of rules) {
       S.config.rules.splice(S.config.rules.indexOf(r), 1);
       S.newRuleIds.delete(r.id);
