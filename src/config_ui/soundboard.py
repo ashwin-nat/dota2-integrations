@@ -6,6 +6,7 @@ import itertools
 import json
 import logging
 import secrets
+import shutil
 import tempfile
 import wave
 from pathlib import Path
@@ -265,7 +266,11 @@ def setup_soundboard(
         renamed, rules_changed = None, 0
         dest = _clip_path(meta.name, current=clip.file)
         if media_ref(dest) != clip.file and resolve(clip.file).is_file():
-            resolve(clip.file).rename(dest)
+            if sharing.shared_folder():
+                # Friends may have copied a rule that plays the old name: keep it for them
+                shutil.copy2(resolve(clip.file), dest)
+            else:
+                resolve(clip.file).rename(dest)
             updated.file = media_ref(dest)
             renamed = {"from": clip.file, "to": updated.file}
             rules_changed = retarget_rules(clip.file, updated.file)
