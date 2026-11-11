@@ -93,3 +93,13 @@ def test_a_new_match_in_pre_game_resets_timers():
     _update(state, "PRE_GAME", -11, matchid="2")
     _update(state, "PRE_GAME", -10, matchid="2")
     assert arbiter.calls == [1, 1]
+
+
+def test_events_processor_resets_on_match_change():
+    state, _ = _state([])
+    chat = {"events": [{"game_time": 5, "event_type": "chat_message", "player_id": 1, "channel_type": 11, "message": "hi"}]}
+    _update(state, "HERO_SELECTION", 0, matchid="1", **chat)
+    _update(state, "HERO_SELECTION", 0, matchid="1", **chat)
+    assert state._bus.published == 1
+    _update(state, "HERO_SELECTION", 0, matchid="2", **chat)
+    assert state._bus.published == 2
