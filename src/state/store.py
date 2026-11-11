@@ -5,6 +5,7 @@ from src.rules.bus import EventBus
 from src.rules.compiler import CompiledRules
 from src.rules.monitor_base import StateSnapshot
 from .abilities import Abilities, parse_abilities
+from .events import EventProcessor, subscribe_defaults
 from .hero import HeroState, parse_hero
 from .items import Items, parse_items
 from .map import MapState, parse_map
@@ -28,6 +29,14 @@ class GameState:
         self._light_arbiter = light_arbiter  # committed once per processed update
         self._prev_items: Items | None = None
         self._abilities_logged: bool = False
+        self.event_processor = EventProcessor(bus)
+        self._events_match_id: str | None = None
+        subscribe_defaults(bus)
+
+    @property
+    def latest_events(self) -> list[dict]:
+        """Raw `events` of the most recent frame."""
+        return self.event_processor.latest
 
     def update(self, data: dict):
         # This method is synchronous. Only CPU-bound operations (parsing, diffing,
@@ -36,6 +45,13 @@ class GameState:
         # let the action executors handle it (their workers run the async parts).
         self._version += 1
         self.raw = data
+
+        # Events (chat etc.) also happen outside a running game, e.g. in hero selection
+        match_id = (data.get("map") or {}).get("matchid")
+        if match_id is not None and match_id != self._events_match_id:
+            self._events_match_id = match_id
+            self.event_processor.reset(f"Match ID changed from {self._events_match_id} to {match_id}")
+        self.event_processor.process(data.get("events") or [])
 
         items = data.get("items")
         abilities = data.get("abilities")
