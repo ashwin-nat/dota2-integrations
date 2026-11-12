@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 
-from src.rules.bus import Event, EventBus, EventPayload
+from src.rules.bus import EventBus, EventPayload
 
 logger = logging.getLogger(__name__)
 
@@ -87,15 +87,3 @@ class EventProcessor:
                 logger.warning(f"Could not parse event {raw}: {e}")
                 continue
             self._bus.emit(event_key(event_type), payload)
-
-
-def log_chat(event: Event) -> None:
-    msg = event.payload
-    assert isinstance(msg, ChatMessage)
-    channel = msg.channel.name.lower() if isinstance(msg.channel, ChatChannel) else msg.channel
-    logger.info(f"Chat [{channel}] player {msg.player_id}: {msg.message}")
-
-
-def subscribe_defaults(bus: EventBus) -> None:
-    """App-level subscribers that stay across rule reloads."""
-    bus.subscribe(event_key("chat_message"), log_chat, persistent=True)

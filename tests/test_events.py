@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from src.rules.bus import EventBus
-from src.state.events import ChatChannel, ChatMessage, EventProcessor, event_key, subscribe_defaults
+from src.state.events import ChatChannel, ChatMessage, EventProcessor, event_key
 
 
 def _chat(t, text, player=3, channel=12):
@@ -62,12 +62,3 @@ def test_processor_reset_redelivers_lingering_events():
     proc.reset()
     proc.process([_chat(110, "a")])
     assert len(got) == 2
-
-
-def test_default_chat_subscriber_survives_bus_reset(caplog):
-    bus = EventBus()
-    subscribe_defaults(bus)
-    bus.reset()
-    with caplog.at_level("INFO"):
-        EventProcessor(bus).process([_chat(1, "hello")])
-    assert "Chat [team] player 3: hello" in caplog.text

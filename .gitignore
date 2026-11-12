@@ -24,3 +24,6 @@ dist/
 !rules.example.json
 recordings/
 src/library_link.txt
+
+# Downloaded chat translation models
+translate_models/
