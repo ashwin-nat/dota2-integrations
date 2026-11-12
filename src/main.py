@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 RULES_PATH = Path("rules.json")
 
-from src import dota_setup, packs, sharing, tray
+from src import dota_setup, packs, sharing, translate, tray
 from src.config_ui import setup_config_ui
 from src.ingress.http_server import BASE_URL, PORT, PortInUse, serve
 from src.lighting import load_lighting_controller
@@ -28,6 +28,7 @@ from src.rules.actions import (ActionExecutor, LightExecutor, SoundExecutor,
                                WebhookExecutor)
 from src.rules.bus import EventBus
 from src.sound import SoundManager
+from src.state.events import event_key
 from src.state.store import GameState
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,8 @@ async def main(
     bus = EventBus(history_size=DEBUG_EVENT_HISTORY if debug else 0)
     compiled = compile_rules(rules_config.rules + sharing.followed_rules(rules_config.rules), bus, executor_by_type)
     state = GameState(compiled, bus, arbiter)
+    chat_translator = translate.ChatTranslator()
+    bus.subscribe(event_key("chat_message"), chat_translator.on_chat, persistent=True)
     counts = ", ".join(f"{n} {t}" for t, n in compiled.counts().items())
     logger.info(f"Rule engine ready: {len(compiled.monitors)} monitors ({counts})")
     # -------------------------
@@ -184,6 +187,7 @@ async def main(
         asyncio.create_task(watch_friends(), name="friends"),
         asyncio.create_task(refresh_packs(), name="packs"),
         asyncio.create_task(publish_library(), name="library"),
+        asyncio.create_task(chat_translator.run(), name="chat_translation"),
         *[
             asyncio.create_task(coro, name=name)
             for executor in executors

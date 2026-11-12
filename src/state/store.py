@@ -5,7 +5,7 @@ from src.rules.bus import EventBus
 from src.rules.compiler import CompiledRules
 from src.rules.monitor_base import StateSnapshot
 from .abilities import Abilities, parse_abilities
-from .events import EventProcessor, subscribe_defaults
+from .events import EventProcessor
 from .hero import HeroState, parse_hero
 from .items import Items, parse_items
 from .map import MapState, parse_map
@@ -31,7 +31,6 @@ class GameState:
         self._abilities_logged: bool = False
         self.event_processor = EventProcessor(bus)
         self._events_match_id: str | None = None
-        subscribe_defaults(bus)
 
     @property
     def latest_events(self) -> list[dict]:
