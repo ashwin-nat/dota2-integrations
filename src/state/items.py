@@ -189,4 +189,5 @@ def parse_items(data: dict) -> Items:
         _stash3=slot("stash3"),
         _stash4=slot("stash4"),
         _stash5=slot("stash5"),
+        _teleport0=slot("teleport0"),
     )
