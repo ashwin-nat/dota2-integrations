@@ -165,3 +165,18 @@ def test_chat_logging_survives_bus_reset(caplog):
         EventProcessor(bus).process([{"game_time": 1, "event_type": "chat_message", "player_id": 3,
                                       "channel_type": 12, "message": "hello"}])
     assert "Chat [team] player 3: hello" in caplog.text
+
+
+def test_clean_leftovers_removes_only_unfinished_downloads(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    models = tmp_path / "translate_models"
+    (models / "ru_en" / "model").mkdir(parents=True)
+    (models / "es_en.partial" / "model").mkdir(parents=True)
+    (models / "tmpabc.argosmodel").write_bytes(b"half")
+    translate.clean_leftovers()
+    assert sorted(p.name for p in models.iterdir()) == ["ru_en"]
+
+
+def test_clean_leftovers_without_a_models_folder(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    translate.clean_leftovers()
