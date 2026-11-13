@@ -80,6 +80,7 @@ class Items:
     _stash3: BaseItem
     _stash4: BaseItem
     _stash5: BaseItem
+    _teleport0: BaseItem
 
     @cached_property
     def _by_name(self) -> dict[str, BaseItem]:
@@ -114,7 +115,7 @@ class Items:
         yield self._stash3
         yield self._stash4
         yield self._stash5
-
+        yield self._teleport0
 
 def _parse_slot(slot_id: str, data: dict) -> BaseItem:
     if data.get("name") == "empty":
