@@ -88,6 +88,17 @@ def model_installed(code: str) -> bool:
     return (d / "sentencepiece.model").is_file() and (d / "model" / "model.bin").is_file()
 
 
+def clean_leftovers() -> None:
+    """Remove half-finished downloads and extractions that a crash left behind. Run before any download starts."""
+    if not MODELS_DIR.is_dir():
+        return
+    for leftover in MODELS_DIR.iterdir():
+        if leftover.suffix == ".argosmodel" and leftover.is_file():
+            leftover.unlink(missing_ok=True)
+        elif leftover.suffix == ".partial" and leftover.is_dir():
+            shutil.rmtree(leftover, ignore_errors=True)
+
+
 def extract_package(archive: Path, dest: Path) -> None:
     """Unpack only the translation model and tokenizer from an .argosmodel (the rest is sentence-splitter data)."""
     tmp = dest.with_name(dest.name + ".partial")
@@ -171,6 +182,7 @@ class ChatTranslator:
             logger.warning("Chat translation is behind, dropping a message")
 
     async def run(self) -> None:
+        await asyncio.to_thread(clean_leftovers)
         try:
             self._detector = await asyncio.to_thread(Detector)
         except Exception as e:
