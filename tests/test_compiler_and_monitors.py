@@ -187,3 +187,26 @@ def test_once_fires_again_in_the_next_match():
     compiled.evaluate_all(_clock_snap(299))
     compiled.evaluate_all(_clock_snap(300))
     assert len(arbiter.calls) == 1
+
+
+def _ability_snap(cooldown):
+    from src.state.abilities import Abilities, Ability
+
+    ability = Ability("ability1", "bristleback_quill_spray", 4, cooldown == 0, False, False,
+                      cooldown, 0, False)
+    return StateSnapshot(None, None, Abilities({"ability1": ability}), None, None, None)
+
+
+def test_ability_recast_fires_without_a_zero_cooldown_frame():
+    # Frames ~1 s apart and a 3 s cooldown: recasting at once reads 1 -> 3, never 0.
+    compiled, bus, _, _ = _setup([
+        {"id": "q", "monitor": {"type": "ability", "target": "bristleback_quill_spray",
+                                "event": "COOLDOWN_STARTED"}, "actions": [_light(8)]},
+    ])
+    monitor = compiled.monitors[0]
+    published = []
+    bus.subscribe("q", lambda event: published.append(event))
+    for cooldown in (0, 3, 2, 1, 3, 2, 1, 3):
+        monitor.evaluate(_ability_snap(cooldown))
+    starts = [e for e in published if e.type.name == "STARTED"]
+    assert len(starts) == 3

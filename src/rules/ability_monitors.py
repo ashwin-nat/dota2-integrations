@@ -56,7 +56,14 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
             self._end()
             return
         cooldown = ability.cooldown
-        if self._prev_cooldown == 0 and cooldown > 0 and not self._transformed:
+        if (
+            self._prev_cooldown is not None
+            and cooldown > self._prev_cooldown
+            and not self._transformed
+        ):
+            # A rise means a cast. Frames arrive ~1 s apart, so a short cooldown
+            # recast the moment it comes up can jump 1 -> 3 without a 0 frame.
+            self._end()
             self._fire()
         elif cooldown == 0:
             self._end()
