@@ -109,12 +109,6 @@ class Items:
         yield self._slot6
         yield self._slot7
         yield self._slot8
-        yield self._stash0
-        yield self._stash1
-        yield self._stash2
-        yield self._stash3
-        yield self._stash4
-        yield self._stash5
         yield self._teleport0
 
 def _parse_slot(slot_id: str, data: dict) -> BaseItem:
