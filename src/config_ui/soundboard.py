@@ -131,9 +131,29 @@ def _download_audio(url: str, out_dir: Path) -> tuple[Path, str]:
         # IPv6 address before trying IPv4 (curl races them), which looks like a hang. Use IPv4.
         "source_address": "0.0.0.0",
         "socket_timeout": 20,
+        # YouTube hides audio formats unless a JS runtime solves its challenge (yt-dlp only
+        # enables deno by default); use whichever of these is installed
+        "js_runtimes": {"deno": {}, "node": {}},
+        "remote_components": ["ejs:github"],
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except yt_dlp.utils.DownloadError as e:
+        if "confirm your age" not in str(e) and "Sign in" not in str(e):
+            raise
+        # Age-restricted: retry signed in, using the cookies of a browser on this machine
+        info = None
+        for browser in ("chrome", "edge", "firefox", "brave"):
+            try:
+                with yt_dlp.YoutubeDL({**opts, "cookiesfrombrowser": (browser,)}) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                break
+            except Exception as retry_error:
+                logger.info(f"Age-restricted retry with {browser} cookies failed: {retry_error}")
+        if info is None:
+            raise ValueError("This video is age-restricted. Sign in to YouTube in Chrome, Edge, "
+                             "Firefox or Brave on this computer and try again") from e
     files = list(out_dir.glob("source.*"))
     if not files:
         raise ValueError("Nothing was downloaded (too long or too large?)")
