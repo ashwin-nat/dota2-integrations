@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
+from src.state.abilities import Abilities, Ability, ChargeAbility
 from src.rules.monitor_base import StateSnapshot, TargetedStatefulMonitor
 from src.rules.monitor_config import MonitorConfig, MonitorType
 
@@ -29,6 +30,7 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
     def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
         super().__init__(target, event_key, bus)
         self._prev_cooldown: int | None = None
+        self._prev_charges: int | None = None
         self._slot_id: str | None = None
         self._transformed = False
         self._prev_names: frozenset[str] = frozenset()
@@ -41,36 +43,59 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
         ability = abilities.find(self._target)
         if ability is not None:
             self._slot_id = ability.slot_id
-        elif self._slot_id is not None:
-            # Some abilities transform in place when used (Centaur's Work Horse
-            # becomes centaur_mount, then reverts): the slot stays, the name
-            # changes. Losing the name from a slot while it was ready counts as
-            # the cooldown starting; the later revert must not fire again.
-            # A real transform puts a name in the slot that was not in any slot
-            # last frame. Invoker's rolling eviction instead shifts an existing
-            # spell into the slot, which is not a cast.
-            # TODO: an ability that transforms into a name already sitting in
-            # another slot would be read as an eviction and not fire. No known
-            # case; check whether any hero does this.
-            occupant = abilities.slots.get(self._slot_id)
-            if (
-                occupant is not None
-                and occupant.level > 0
-                and occupant.name not in self._prev_names
-                # Kez's stance switch renames several slots at once.
-                and len(names - self._prev_names) == 1
-            ):
-                if self._prev_cooldown == 0 and not self._transformed:
-                    self._transformed = True
-                    self._fire()
-                self._prev_names = names
-                return
-        if ability is None or ability.level == 0:
-            self._prev_cooldown = None
-            self._transformed = False
-            self._end()
+        elif self._slot_id is not None and self._handle_transform(abilities, names):
             self._prev_names = names
             return
+        if ability is None or ability.level == 0:
+            self._reset_tracking()
+            self._end()
+        elif isinstance(ability, ChargeAbility):
+            self._evaluate_charges(ability)
+        else:
+            self._evaluate_cooldown(ability)
+        self._prev_names = names
+
+    def _handle_transform(self, abilities: Abilities, names: frozenset[str]) -> bool:
+        """The target's name is gone from every slot: was it an in-place transform?
+
+        Some abilities transform in place when used (Centaur's Work Horse
+        becomes centaur_mount, then reverts): the slot stays, the name
+        changes. Losing the name from a slot while it was ready counts as
+        the cooldown starting; the later revert must not fire again.
+        A real transform puts a name in the slot that was not in any slot
+        last frame. Invoker's rolling eviction instead shifts an existing
+        spell into the slot, which is not a cast.
+        TODO: an ability that transforms into a name already sitting in
+        another slot would be read as an eviction and not fire. No known
+        case; check whether any hero does this.
+
+        Returns True when the frame was a transform and needs no further handling.
+        """
+        occupant = abilities.at(self._slot_id)
+        if not (
+            occupant is not None
+            and occupant.level > 0
+            and occupant.name not in self._prev_names
+            # Kez's stance switch renames several slots at once.
+            and len(names - self._prev_names) == 1
+        ):
+            return False
+        if self._prev_cooldown == 0 and not self._transformed:
+            self._transformed = True
+            self._fire()
+        return True
+
+    def _evaluate_charges(self, ability: ChargeAbility) -> None:
+        """Charge shape: `cooldown` doesn't track it, a cast is a charge being
+        spent. Active while a charge is recharging."""
+        if self._prev_charges is not None and ability.charges < self._prev_charges:
+            self._end()
+            self._fire()
+        elif ability.charge_cooldown == 0:
+            self._end()
+        self._prev_charges = ability.charges
+
+    def _evaluate_cooldown(self, ability: Ability) -> None:
         cooldown = ability.cooldown
         if (
             self._prev_cooldown is not None
@@ -86,11 +111,16 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
         if cooldown == 0 or self._transformed:
             self._transformed = False
         self._prev_cooldown = cooldown
-        self._prev_names = names
+
+    def _reset_tracking(self) -> None:
+        self._prev_cooldown = None
+        self._prev_charges = None
+        self._transformed = False
 
     def clear(self) -> None:
         super().clear()
         self._prev_cooldown = None
+        self._prev_charges = None
         self._slot_id = None
         self._transformed = False
         self._prev_names = frozenset()

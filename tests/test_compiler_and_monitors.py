@@ -212,6 +212,19 @@ def test_ability_recast_fires_without_a_zero_cooldown_frame():
     assert len(starts) == 3
 
 
+def test_charge_based_ability_fires_when_a_charge_is_spent():
+    # Shrapnel keeps cooldown at 0; casting only lowers `charges`, regen raises them.
+    from src.state.abilities import Abilities, ChargeAbility
+
+    def frame(charges):
+        a = ChargeAbility("ability0", "sniper_shrapnel", 4, charges > 0, False, True, 0, 0, False,
+                    charges, 3, 0 if charges == 3 else 20)
+        return StateSnapshot(None, None, Abilities({"ability0": a}), None, None, None)
+
+    frames = [frame(c) for c in (3, 3, 2, 2, 1, 2, 2, 3, 3, 2)]
+    assert _ability_starts(["sniper_shrapnel"], frames) == {"sniper_shrapnel": 3}
+
+
 def _slots_snap(*slots):
     """One frame of abilities from (name, cooldown) pairs, in slot order."""
     from src.state.abilities import Abilities, Ability
