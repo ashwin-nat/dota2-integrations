@@ -28,6 +28,13 @@ class Recorder:
     def record(self, data: dict) -> None:
         self._entries.append({"ts": datetime.now().astimezone().isoformat(), "data": data})
 
+    def clear(self) -> int:
+        """Drop every recorded payload and return how many there were."""
+        count = len(self._entries)
+        self._entries.clear()
+        logger.info(f"Cleared {count} recorded payloads")
+        return count
+
     def save(self, directory: Path = RECORDINGS_DIR, name: str | None = None) -> Path:
         """Write the history as JSONL, to `name` or a timestamped file. Raises ValueError if `name` can't be used."""
         directory.mkdir(parents=True, exist_ok=True)

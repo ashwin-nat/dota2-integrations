@@ -128,6 +128,7 @@ async function loadAll() {
   S.dataDir = info.data_dir;
   $("#power").hidden = !info.can_shutdown;
   $("#save-recording").hidden = !info.recording;
+  $("#clear-recording").hidden = !info.recording;
   S.config = config;
   S.media = media;
   S.clips = board.clips;
@@ -381,6 +382,14 @@ function openSaveRecording() {
   input.select();
 }
 
+async function clearRecording() {
+  if (!confirm("Throw away everything recorded so far? This can't be undone.")) return;
+  const res = await fetch("/record/clear", { method: "POST" }).catch((e) => ({ ok: false, text: async () => e.message }));
+  if (!res.ok) { toast((await res.text()).trim(), "err"); return; }
+  const { count } = await res.json();
+  toast(`Cleared ${plural(count, "update")}`, "ok");
+}
+
 function showChanges() {
   if (!S.config || !isDirty()) return;
   const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
@@ -521,6 +530,7 @@ $("#save").addEventListener("click", save);
 $("#status").addEventListener("click", (e) => { if (e.currentTarget.classList.contains("dirty")) showChanges(); });
 $("#power").addEventListener("click", powerOff);
 $("#save-recording").addEventListener("click", openSaveRecording);
+$("#clear-recording").addEventListener("click", clearRecording);
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); if (isDirty()) save(); }
 });

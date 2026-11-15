@@ -83,6 +83,11 @@ async def serve(
 
         app.router.add_route("*", "/record/save", _save)
 
+        async def _clear(request: web.Request) -> web.Response:
+            return web.json_response({"count": recorder.clear()})
+
+        app.router.add_route("*", "/record/clear", _clear)
+
     runner = web.AppRunner(app)
     await runner.setup()
 
