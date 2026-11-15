@@ -210,3 +210,113 @@ def test_ability_recast_fires_without_a_zero_cooldown_frame():
         monitor.evaluate(_ability_snap(cooldown))
     starts = [e for e in published if e.type.name == "STARTED"]
     assert len(starts) == 3
+
+
+def _slots_snap(*slots):
+    """One frame of abilities from (name, cooldown) pairs, in slot order."""
+    from src.state.abilities import Abilities, Ability
+
+    return StateSnapshot(None, None, Abilities({
+        f"ability{i}": Ability(f"ability{i}", name, 1, cd == 0, False, True, cd, 0, False)
+        for i, (name, cd) in enumerate(slots)
+    }), None, None, None)
+
+
+def _ability_starts(targets, frames):
+    """Run ability monitors for each target over the frames; return how often each fired."""
+    compiled, bus, _, _ = _setup([
+        {"id": t, "monitor": {"type": "ability", "target": t, "event": "COOLDOWN_STARTED"},
+         "actions": [_light(10 + i)]}
+        for i, t in enumerate(targets)
+    ])
+    counts = dict.fromkeys(targets, 0)
+    for t in targets:
+        bus.subscribe(t, lambda e, t=t: counts.__setitem__(t, counts[t] + (e.type.name == "STARTED")))
+    for frame in frames:
+        compiled.evaluate_all(frame)
+    return counts
+
+
+def test_invoker_eviction_does_not_fire_the_evicted_spell():
+    # Invoked spells enter slot 3 and shift to slot 4; a third invoke evicts the oldest.
+    orbs = [("invoker_quas", 0), ("invoker_wex", 0), ("invoker_exort", 0)]
+    frames = [
+        _slots_snap(*orbs, ("invoker_empty1", 0), ("invoker_empty2", 0), ("invoker_invoke", 0)),
+        _slots_snap(*orbs, ("invoker_tornado", 0), ("invoker_empty1", 0), ("invoker_invoke", 0)),
+        _slots_snap(*orbs, ("invoker_chaos_meteor", 0), ("invoker_tornado", 0), ("invoker_invoke", 0)),
+        _slots_snap(*orbs, ("invoker_deafening_blast", 0), ("invoker_chaos_meteor", 0), ("invoker_invoke", 0)),
+        _slots_snap(*orbs, ("invoker_ice_wall", 0), ("invoker_deafening_blast", 0), ("invoker_invoke", 0)),
+    ]
+    counts = _ability_starts(["invoker_tornado", "invoker_chaos_meteor", "invoker_deafening_blast"], frames)
+    assert counts == {"invoker_tornado": 0, "invoker_chaos_meteor": 0, "invoker_deafening_blast": 0}
+
+
+def test_invoker_spell_still_fires_when_cast_after_shifting_slots():
+    orbs = [("invoker_quas", 0), ("invoker_wex", 0), ("invoker_exort", 0)]
+    frames = [
+        _slots_snap(*orbs, ("invoker_tornado", 0), ("invoker_empty1", 0)),
+        _slots_snap(*orbs, ("invoker_chaos_meteor", 0), ("invoker_tornado", 0)),
+        _slots_snap(*orbs, ("invoker_chaos_meteor", 0), ("invoker_tornado", 30)),
+    ]
+    assert _ability_starts(["invoker_tornado"], frames) == {"invoker_tornado": 1}
+
+
+KEZ_KATANA = [("kez_echo_slash", 0), ("kez_grappling_claw", 0), ("kez_kazurai_katana", 0),
+              ("kez_switch_weapons", 0), ("kez_raptor_dance", 0)]
+KEZ_SAI = [("kez_falcon_rush", 0), ("kez_talon_toss", 0), ("kez_shodo_sai", 0),
+           ("kez_switch_weapons", 0), ("kez_ravens_veil", 0)]
+
+
+def test_kez_stance_switch_does_not_fire_hidden_abilities():
+    # Switching stance renames four slots at once; none of those are casts.
+    frames = [_slots_snap(*KEZ_KATANA), _slots_snap(*KEZ_SAI), _slots_snap(*KEZ_KATANA)]
+    counts = _ability_starts(["kez_raptor_dance", "kez_ravens_veil", "kez_echo_slash", "kez_falcon_rush"], frames)
+    assert not any(counts.values())
+
+
+def test_kez_cast_in_stance_fires_once():
+    cast = [("kez_echo_slash", 0), ("kez_grappling_claw", 0), ("kez_kazurai_katana", 6),
+            ("kez_switch_weapons", 0), ("kez_raptor_dance", 0)]
+    frames = [_slots_snap(*KEZ_KATANA), _slots_snap(*cast), _slots_snap(*KEZ_SAI)]
+    counts = _ability_starts(["kez_kazurai_katana", "kez_raptor_dance"], frames)
+    assert counts == {"kez_kazurai_katana": 1, "kez_raptor_dance": 0}
+
+
+def test_in_place_transform_fires_once_and_the_revert_does_not():
+    ready = [("centaur_work_horse", 0), ("centaur_stomp", 0)]
+    mounted = [("centaur_mount", 0), ("centaur_stomp", 0)]
+    cooling = [("centaur_work_horse", 20), ("centaur_stomp", 0)]
+    frames = [_slots_snap(*ready), _slots_snap(*mounted), _slots_snap(*mounted),
+              _slots_snap(*cooling), _slots_snap(*cooling)]
+    assert _ability_starts(["centaur_work_horse"], frames) == {"centaur_work_horse": 1}
+
+
+LARGO_NORMAL = [("largo_catchy_lick", 0), ("largo_frogstomp", 0), ("largo_croak_of_genius", 0),
+                ("largo_amphibian_rhapsody", 0)]
+LARGO_SONGS = [("largo_song_fight_song", 0), ("largo_song_double_time", 0),
+               ("largo_song_good_vibrations", 0), ("largo_amphibian_rhapsody", 0)]
+
+
+def test_largo_song_mode_switch_does_not_fire_hidden_abilities():
+    # Amphibian Rhapsody renames three slots at once, and back again.
+    frames = [_slots_snap(*LARGO_NORMAL), _slots_snap(*LARGO_SONGS), _slots_snap(*LARGO_NORMAL)]
+    counts = _ability_starts(
+        ["largo_catchy_lick", "largo_frogstomp", "largo_croak_of_genius",
+         "largo_song_fight_song", "largo_song_double_time", "largo_song_good_vibrations"],
+        frames,
+    )
+    assert not any(counts.values())
+
+
+def test_largo_songs_share_a_cooldown_and_each_fires_once():
+    on_cooldown = [(name, 1) for name, _ in LARGO_SONGS[:3]] + [LARGO_SONGS[3]]
+    frames = [_slots_snap(*LARGO_NORMAL), _slots_snap(*LARGO_SONGS), _slots_snap(*on_cooldown),
+              _slots_snap(*on_cooldown), _slots_snap(*LARGO_SONGS)]
+    songs = [name for name, _ in LARGO_SONGS[:3]]
+    assert _ability_starts(songs, frames) == dict.fromkeys(songs, 1)
+
+
+def test_largo_rhapsody_fires_when_it_reverts_onto_cooldown():
+    reverted = LARGO_NORMAL[:3] + [("largo_amphibian_rhapsody", 2)]
+    frames = [_slots_snap(*LARGO_NORMAL), _slots_snap(*LARGO_SONGS), _slots_snap(*reverted)]
+    assert _ability_starts(["largo_amphibian_rhapsody"], frames) == {"largo_amphibian_rhapsody": 1}

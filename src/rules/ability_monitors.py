@@ -31,11 +31,13 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
         self._prev_cooldown: int | None = None
         self._slot_id: str | None = None
         self._transformed = False
+        self._prev_names: frozenset[str] = frozenset()
 
     def evaluate(self, snap: StateSnapshot) -> None:
         abilities = snap.abilities
         if abilities is None:
             return
+        names = frozenset(a.name for a in abilities)
         ability = abilities.find(self._target)
         if ability is not None:
             self._slot_id = ability.slot_id
@@ -44,16 +46,30 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
             # becomes centaur_mount, then reverts): the slot stays, the name
             # changes. Losing the name from a slot while it was ready counts as
             # the cooldown starting; the later revert must not fire again.
+            # A real transform puts a name in the slot that was not in any slot
+            # last frame. Invoker's rolling eviction instead shifts an existing
+            # spell into the slot, which is not a cast.
+            # TODO: an ability that transforms into a name already sitting in
+            # another slot would be read as an eviction and not fire. No known
+            # case; check whether any hero does this.
             occupant = abilities.slots.get(self._slot_id)
-            if occupant is not None and occupant.level > 0:
+            if (
+                occupant is not None
+                and occupant.level > 0
+                and occupant.name not in self._prev_names
+                # Kez's stance switch renames several slots at once.
+                and len(names - self._prev_names) == 1
+            ):
                 if self._prev_cooldown == 0 and not self._transformed:
                     self._transformed = True
                     self._fire()
+                self._prev_names = names
                 return
         if ability is None or ability.level == 0:
             self._prev_cooldown = None
             self._transformed = False
             self._end()
+            self._prev_names = names
             return
         cooldown = ability.cooldown
         if (
@@ -70,12 +86,14 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
         if cooldown == 0 or self._transformed:
             self._transformed = False
         self._prev_cooldown = cooldown
+        self._prev_names = names
 
     def clear(self) -> None:
         super().clear()
         self._prev_cooldown = None
         self._slot_id = None
         self._transformed = False
+        self._prev_names = frozenset()
 
 
 # Registry: event name → monitor class
