@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from pydantic import Field, model_validator
 
@@ -9,6 +9,7 @@ from src.rules.monitor_config import MonitorConfig, MonitorType
 
 if TYPE_CHECKING:
     from src.rules.bus import EventBus
+    from src.rules.config import Rule
 
 
 class PeriodicMonitorConfig(MonitorConfig):
@@ -30,8 +31,8 @@ class PeriodicMonitorConfig(MonitorConfig):
     def event(self) -> str:
         return "TICK"
 
-    def _create(self, bus: EventBus, key: str) -> PeriodicMonitor:
-        return PeriodicMonitor(self.period, self.offset, key, bus, self.min_time, self.max_time)
+    def _create(self, bus: EventBus, rule: Rule) -> PeriodicMonitor:
+        return PeriodicMonitor(rule, bus)
 
 
 class PeriodicMonitor(Monitor):
@@ -46,21 +47,13 @@ class PeriodicMonitor(Monitor):
 
     runs_before_horn = True
 
-    def __init__(
-        self,
-        period: int,
-        offset: int,
-        event_key: str,
-        bus: EventBus,
-        min_time: int | None = None,
-        max_time: int | None = None,
-    ) -> None:
-        self._period = period
-        self._offset = offset
-        self._min_time = min_time  # triggers before this clock time are skipped
-        self._max_time = max_time  # triggers after this clock time are skipped
-        self._event_key = event_key
-        self._bus = bus
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
+        cfg = cast("PeriodicMonitorConfig", rule.monitor)
+        self._period = cfg.period
+        self._offset = cfg.offset
+        self._min_time = cfg.min_time  # triggers before this clock time are skipped
+        self._max_time = cfg.max_time  # triggers after this clock time are skipped
         self._prev_clock: int | None = None
 
     def evaluate(self, snap: StateSnapshot) -> None:
@@ -90,8 +83,8 @@ class OnceMonitorConfig(MonitorConfig):
     def event(self) -> str:
         return "TICK"
 
-    def _create(self, bus: EventBus, key: str) -> OnceMonitor:
-        return OnceMonitor(self.time, key, bus)
+    def _create(self, bus: EventBus, rule: Rule) -> OnceMonitor:
+        return OnceMonitor(rule, bus)
 
 
 class OnceMonitor(Monitor):
@@ -103,10 +96,9 @@ class OnceMonitor(Monitor):
 
     runs_before_horn = True
 
-    def __init__(self, time: int, event_key: str, bus: EventBus) -> None:
-        self._time = time
-        self._event_key = event_key
-        self._bus = bus
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
+        self._time = cast("OnceMonitorConfig", rule.monitor).time
         self._prev_clock: int | None = None
 
     def evaluate(self, snap: StateSnapshot) -> None:

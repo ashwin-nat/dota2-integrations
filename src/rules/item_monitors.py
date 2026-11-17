@@ -9,6 +9,7 @@ from src.state.items import BaseItem, NoChargeItem, SingleChargeItem, MultiCharg
 
 if TYPE_CHECKING:
     from src.rules.bus import EventBus
+    from src.rules.config import Rule
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +19,9 @@ class ItemMonitorConfig(MonitorConfig):
     target: str
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
 
-    def _create(self, bus: EventBus, key: str) -> TargetedStatefulMonitor:
+    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
         registry = ITEM_SPECIFIC_REGISTRIES.get(self.target, ITEM_MONITOR_REGISTRY)
-        return registry[self.event](self.target, key, bus)
+        return registry[self.event](rule, bus)
 
 
 class MidasMonitorConfig(MonitorConfig):
@@ -28,8 +29,12 @@ class MidasMonitorConfig(MonitorConfig):
     type: Literal[MonitorType.MIDAS]
     event: Literal["CHARGED", "OVERCHARGED"]
 
-    def _create(self, bus: EventBus, key: str) -> TargetedStatefulMonitor:
-        return MIDAS_MONITOR_REGISTRY[self.event]("item_hand_of_midas", key, bus)
+    @property
+    def target(self) -> str:
+        return "item_hand_of_midas"
+
+    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
+        return MIDAS_MONITOR_REGISTRY[self.event](rule, bus)
 
 
 class BlinkMonitorConfig(MonitorConfig):
@@ -37,15 +42,19 @@ class BlinkMonitorConfig(MonitorConfig):
     type: Literal[MonitorType.BLINK]
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
 
-    def _create(self, bus: EventBus, key: str) -> TargetedStatefulMonitor:
-        return BLINK_MONITOR_REGISTRY[self.event]("item_blink", key, bus)
+    @property
+    def target(self) -> str:
+        return "item_blink"
+
+    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
+        return BLINK_MONITOR_REGISTRY[self.event](rule, bus)
 
 
 class CooldownReadyMonitor(TargetedStatefulMonitor):
     """Active while the target item is off cooldown, from the > 0 to 0 transition."""
 
-    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
-        super().__init__(target, event_key, bus)
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
         self._prev_cooldown: int | None = None
 
     def evaluate(self, snap: StateSnapshot) -> None:
@@ -72,8 +81,8 @@ class CooldownReadyMonitor(TargetedStatefulMonitor):
 class CooldownStartedMonitor(TargetedStatefulMonitor):
     """Active while the target item is on cooldown, from the 0 to > 0 transition."""
 
-    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
-        super().__init__(target, event_key, bus)
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
         self._prev_cooldown: int | None = None
 
     def evaluate(self, snap: StateSnapshot) -> None:
@@ -107,8 +116,8 @@ class CooldownStartedMonitor(TargetedStatefulMonitor):
 class ItemAcquiredMonitor(TargetedStatefulMonitor):
     """Active while the target item is anywhere in the inventory."""
 
-    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
-        super().__init__(target, event_key, bus)
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
         self._seen: bool = False
 
     def evaluate(self, snap: StateSnapshot) -> None:
@@ -131,8 +140,8 @@ class ItemAcquiredMonitor(TargetedStatefulMonitor):
 class ItemLostMonitor(TargetedStatefulMonitor):
     """Active from when the target item disappears from the inventory until it returns."""
 
-    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
-        super().__init__(target, event_key, bus)
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
         self._had_item: bool = False
 
     def evaluate(self, snap: StateSnapshot) -> None:
@@ -226,8 +235,8 @@ class BkbCooldownStartedMonitor(CooldownStartedMonitor):
     time, so pausing is respected) and ends early if the item is lost.
     """
 
-    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
-        super().__init__(target, event_key, bus)
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
         self._start_cooldown: int = 0
 
     def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:

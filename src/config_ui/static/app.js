@@ -30,6 +30,8 @@ const GAME_EVENTS = [
   { type: "map", event: "UNPAUSED", label: "Game unpaused", sub: "Play resumes", glyph: "▶️", baseline: true },
   { type: "hero", event: "HERO_KILLED", label: "You died", sub: "Your hero is killed", glyph: "💀" },
   { type: "hero", event: "HERO_RESPAWNED", label: "You respawned", sub: "Back from the fountain", glyph: "✨" },
+  { type: "hero_bool", event: "AGHANIMS_SCEPTER_TRUE", label: "Aghanim's Scepter", sub: "You get the Scepter upgrade", img: itemImg("ultimate_scepter"), monitor: { field: "aghanims_scepter", value: true } },
+  { type: "hero_bool", event: "AGHANIMS_SHARD_TRUE", label: "Aghanim's Shard", sub: "You get the Shard upgrade", img: itemImg("aghanims_shard"), monitor: { field: "aghanims_shard", value: true } },
   { type: "midas", event: "CHARGED", label: "Midas ready", sub: "1 charge available", img: itemImg("hand_of_midas") },
   { type: "midas", event: "OVERCHARGED", label: "Midas overcharged", sub: "2 charges, wasted gold!", img: itemImg("hand_of_midas") },
 ];
@@ -175,7 +177,7 @@ function rulesForTarget(target) {
 }
 
 function ruleIdFor(monitor) {
-  const target = (monitor.target || monitor.type).replace(/^item_/, "");
+  const target = (monitor.target || (monitor.field ? "hero" : monitor.type)).replace(/^item_/, "");
   const suffix = {
     ITEM_ACQUIRED: "bought", COOLDOWN_STARTED: "used", COOLDOWN_READY: "ready", ITEM_LOST: "lost",
   }[monitor.event] || monitor.event.toLowerCase();
@@ -1917,7 +1919,7 @@ function renderInspector() {
     const [type, event] = sel.key.split(":");
     const g = GAME_EVENTS.find((x) => x.type === type && x.event === event);
     head = { title: g.label, img: g.img, glyph: g.glyph, sub: g.sub };
-    events = [{ event, label: g.label, desc: g.sub, monitor: { type, event } }];
+    events = [{ event, label: g.label, desc: g.sub, monitor: { type, event, ...g.monitor } }];
     if (g.baseline) warn = "Lights set here become the room's baseline colour until the next day/night change.";
   }
 

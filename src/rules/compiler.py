@@ -65,7 +65,7 @@ def compile_rules(
             logger.warning(f"Skipping rule {rule.id!r}: another rule already has this id")
             continue
         seen_ids.add(rule.id)
-        monitor = m.build(bus, rule.id)
+        monitor = m.build(bus, rule)
         compiled.monitors.append(monitor)
         for action in actions:
             executors[action.type].register(

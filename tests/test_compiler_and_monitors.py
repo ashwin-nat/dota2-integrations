@@ -333,3 +333,36 @@ def test_largo_rhapsody_fires_when_it_reverts_onto_cooldown():
     reverted = LARGO_NORMAL[:3] + [("largo_amphibian_rhapsody", 2)]
     frames = [_slots_snap(*LARGO_NORMAL), _slots_snap(*LARGO_SONGS), _slots_snap(*reverted)]
     assert _ability_starts(["largo_amphibian_rhapsody"], frames) == {"largo_amphibian_rhapsody": 1}
+def _stun_rule(value=True):
+    return {"id": "s", "monitor": {"type": "hero_bool", "field": "stunned", "value": value}, "actions": [_light(5)]}
+
+
+def _flag_snap(stunned):
+    return StateSnapshot(None, None, None, SimpleNamespace(stunned=stunned), None, None)
+
+
+def test_hero_bool_is_active_from_the_change_until_it_changes_back():
+    compiled, _, arbiter, _ = _setup([_stun_rule()])
+    compiled.evaluate_all(_flag_snap(True))    # first look: only records
+    compiled.evaluate_all(_flag_snap(False))
+    compiled.evaluate_all(_flag_snap(True))    # becomes stunned
+    compiled.evaluate_all(_flag_snap(False))   # ends
+    assert arbiter.calls == [("set", 5, (1, 2, 3)), ("clear", 5)]
+
+
+def test_hero_bool_rejects_unknown_and_alive_fields():
+    for bad in ("alive", "health", "nope"):
+        rule = {"id": "s", "monitor": {"type": "hero_bool", "field": bad}, "actions": [_light(5)]}
+        try:
+            RulesConfig.model_validate({"rules": [rule]})
+        except ValueError:
+            continue
+        raise AssertionError(f"{bad} was accepted")
+
+
+def test_hero_bool_event_is_serialized_for_the_editor():
+    rule = {"id": "s", "monitor": {"type": "hero_bool", "field": "aghanims_shard", "value": True}, "actions": [_light(5)]}
+    dumped = RulesConfig.model_validate({"rules": [rule]}).model_dump(mode="json")["rules"][0]["monitor"]
+    assert dumped["event"] == "AGHANIMS_SHARD_TRUE"
+    # the editor sends `event` back along with field/value; it is accepted and recomputed
+    RulesConfig.model_validate({"rules": [{**rule, "monitor": dumped}]})

@@ -62,14 +62,14 @@ src/
 │   ├── map.py / hero.py / player.py   # typed parsers
 ├── rules/
 │   ├── config.py              # Pydantic models: Rule, RulesConfig, actions, and the AnyMonitor union (the one list of monitor configs)
-│   ├── monitor_config.py      # MonitorType, MonitorConfig base (_create(bus, key), takes_light_priority; build(bus, key) wraps _create and tags the monitor's type)
+│   ├── monitor_config.py      # MonitorType, MonitorConfig base (_create(bus, rule), takes_light_priority; build(bus, rule) wraps _create and tags the monitor's type)
 │   ├── compiler.py            # compile_rules() — one monitor per rule, binds actions to executors; CompiledRules
 │   ├── bus.py                 # EventBus — synchronous topic router; Event, EventType
 │   ├── monitor_base.py        # StateSnapshot, Monitor ABC, StatefulMonitor (_fire / _end)
 │   ├── item_monitors.py       # item / midas / blink configs + monitors + registries
 │   ├── ability_monitors.py    # ability config + monitor (cooldown-started tracking)
 │   ├── map_monitor.py         # map config + monitor (day/night, pause)
-│   ├── hero_monitor.py        # hero config + monitor (killed / respawned)
+│   ├── hero_monitor.py        # hero configs + monitors: HeroAliveMonitor (killed / respawned, ends) and generic stateful HeroBoolMonitor (any HeroState bool via `field`; HeroAliveMonitor is its alive case)
 │   ├── periodic_monitor.py    # periodic and once configs + monitors (game clock)
 │   └── actions/
 │       ├── base.py            # ActionBinding, ActionExecutor ABC
@@ -103,7 +103,7 @@ tools/frames.py                # print how one ability/item/hero block changes a
 - **The bus is a plain topic router** — `EventBus` is synchronous publish/subscribe: a monitor `emit`s (STARTED) or `retract`s (ENDED) an event key, and the executors subscribed to that key handle it, in subscription order. A handler that raises is logged and does not stop the others. The bus knows nothing about actions.
 - **Executors own their action type** — `LightExecutor` sets lights on the arbiter synchronously (the arbiter commits once per update); `SoundExecutor` and `WebhookExecutor` put work on their own queue, drained by async workers (`workers()`), so `update()` never does I/O.
 - **One monitor per rule, keyed by rule id** — each rule publishes under its own bus key (its id; config validation rejects duplicate ids), so two rules on the same trigger just get separate monitors and every action runs once. The compiler also accepts rules that never went through `RulesConfig` (e.g. followed friends' rules), as long as their ids are unique.
-- **Monitors are self-contained** — each monitor module holds its config model (with `_create(bus)`) and its monitor class. All monitors take one `StateSnapshot` (`items`, `prev_items`, `abilities`, `hero`, `player`, `map`) and return early if the part they need is missing.
+- **Monitors are self-contained** — each monitor module holds its config model (with `_create(bus, rule)`) and its monitor class. Every monitor is constructed with `(rule, bus)` and reads its settings from `rule.monitor`. All monitors take one `StateSnapshot` (`items`, `prev_items`, `abilities`, `hero`, `player`, `map`) and return early if the part they need is missing.
 
 ## State API (`src/state/store.py`)
 
@@ -130,6 +130,7 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 | `ability`| `AbilityMonitorConfig` | `COOLDOWN_STARTED` (cooldown 0 → > 0)         |
 | `periodic`| `PeriodicMonitorConfig` | fires when the game clock passes `k*period + offset` (`period` ≥ 1 s, `offset` -59..59, default 0; optional `min_time` / `max_time` clock seconds, inclusive, limit which triggers fire) |
 | `once`   | `OnceMonitorConfig`  | fires once per match when the game clock reaches `time` seconds (may be negative) |
+| `hero_bool` | `HeroBoolMonitorConfig` | active while a `HeroState` bool `field` equals `value` (default true), from the change to it; the editor offers Aghanim's Scepter and Shard under Game events. `event` is computed (`AGHANIMS_SHARD_TRUE`) and serialized so the editor matches triggers like the others |
 
 In the editor, periodic and once rules are "Reminders" under Game events; a "Repeats" toggle switches a reminder between the two (off shows just the target game time). Repeating ones have presets (stack camps, bounty, power and wisdom runes, lotus) or a custom timer, with "every", an early/late shift (offset), "from" / "until" (`m:ss`) and a preview of the first play times. Each reminder is its own rule (`reminder_<preset>`); the compiler keys periodic monitors per rule, so two reminders on the same schedule each fire, and `sharing._trigger` keys them by schedule. `periodic` monitors (`periodic_monitor.py`) use `map.clock_time`, which starts negative but never goes backwards. A trigger fires when it lies in (previous clock, current clock]; a gap spanning several triggers fires once, and the first update after start or a match change only records the clock.
 
@@ -180,7 +181,7 @@ Ability cooldowns fire on any rise in `cooldown`, not only 0 -> >0, because fram
 
 ## Adding a monitor
 
-One new module with the monitor's config model (a `MonitorConfig` subclass: `type`, fields, `_create(bus, key)`, and `takes_light_priority = False` if its lights are the baseline) and its monitor class (`Monitor`, `StatefulMonitor` or `TargetedStatefulMonitor`, `evaluate(snap)` + `clear()`). Then add its `MonitorType` value in `monitor_config.py` and its config class to the `AnyMonitor` union in `config.py`. Nothing else changes: the compiler calls `rule.monitor.build(bus, rule.id)`.
+One new module with the monitor's config model (a `MonitorConfig` subclass: `type`, fields, `_create(bus, rule)`, and `takes_light_priority = False` if its lights are the baseline) and its monitor class (`Monitor`, `StatefulMonitor` or `TargetedStatefulMonitor`, `evaluate(snap)` + `clear()`). Then add its `MonitorType` value in `monitor_config.py` and its config class to the `AnyMonitor` union in `config.py`. Nothing else changes: the compiler calls `rule.monitor.build(bus, rule)`.
 
 ## Build & Release
 

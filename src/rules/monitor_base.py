@@ -8,6 +8,7 @@ from src.rules.monitor_config import MonitorType
 
 if TYPE_CHECKING:
     from src.rules.bus import EventBus
+    from src.rules.config import Rule
     from src.state.abilities import Abilities
     from src.state.hero import HeroState
     from src.state.items import Items
@@ -37,6 +38,11 @@ class Monitor(ABC):
     # Also evaluated during pre-game (clock -1:30 to the horn). Only monitors that read just the map clock.
     runs_before_horn: bool = False
 
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        self._rule = rule
+        self._event_key = rule.id  # the bus key this monitor publishes under
+        self._bus = bus
+
     @abstractmethod
     def evaluate(self, snap: StateSnapshot) -> None:
         """Look at one update and emit (or retract) events."""
@@ -55,9 +61,8 @@ class StatefulMonitor(Monitor):
     safe to call on every evaluation. ``clear`` resets per-match state.
     """
 
-    def __init__(self, event_key: str, bus: EventBus) -> None:
-        self._event_key = event_key
-        self._bus = bus
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
         self._active = False
 
     def _fire(self) -> None:
@@ -74,8 +79,11 @@ class StatefulMonitor(Monitor):
 
 
 class TargetedStatefulMonitor(StatefulMonitor):
-    """A stateful monitor that watches one named target (an item or ability name)."""
+    """A stateful monitor that watches one named target (an item or ability name).
 
-    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
-        super().__init__(event_key, bus)
-        self._target = target
+    The target comes from the rule's monitor config (`target`).
+    """
+
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
+        self._target: str = rule.monitor.target

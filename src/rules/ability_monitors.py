@@ -8,6 +8,7 @@ from src.rules.monitor_config import MonitorConfig, MonitorType
 
 if TYPE_CHECKING:
     from src.rules.bus import EventBus
+    from src.rules.config import Rule
 
 
 class AbilityMonitorConfig(MonitorConfig):
@@ -15,8 +16,8 @@ class AbilityMonitorConfig(MonitorConfig):
     target: str  # internal ability name, e.g. "spectre_spectral_dagger"
     event: Literal["COOLDOWN_STARTED"]
 
-    def _create(self, bus: EventBus, key: str) -> TargetedStatefulMonitor:
-        return ABILITY_MONITOR_REGISTRY[self.event](self.target, key, bus)
+    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
+        return ABILITY_MONITOR_REGISTRY[self.event](rule, bus)
 
 
 class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
@@ -27,8 +28,8 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
     cooldown is the rule author's responsibility.
     """
 
-    def __init__(self, target: str, event_key: str, bus: EventBus) -> None:
-        super().__init__(target, event_key, bus)
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
         self._prev_cooldown: int | None = None
         self._prev_charges: int | None = None
         self._slot_id: str | None = None

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_va
 
 from src.media import resolve
 from src.rules.ability_monitors import AbilityMonitorConfig
-from src.rules.hero_monitor import HeroMonitorConfig
+from src.rules.hero_monitor import HeroBoolMonitorConfig, HeroMonitorConfig
 from src.rules.item_monitors import BlinkMonitorConfig, ItemMonitorConfig, MidasMonitorConfig
 from src.rules.map_monitor import MapMonitorConfig
 from src.rules.periodic_monitor import OnceMonitorConfig, PeriodicMonitorConfig
@@ -143,6 +143,7 @@ AnyMonitor = Annotated[
         BlinkMonitorConfig,
         MapMonitorConfig,
         HeroMonitorConfig,
+        HeroBoolMonitorConfig,
         AbilityMonitorConfig,
         PeriodicMonitorConfig,
         OnceMonitorConfig,

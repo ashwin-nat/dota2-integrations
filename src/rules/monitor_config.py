@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from src.rules.bus import EventBus
+    from src.rules.config import Rule
     from src.rules.monitor_base import Monitor
 
 
@@ -17,6 +18,7 @@ class MonitorType(StrEnum):
     BLINK = "blink"
     MAP   = "map"
     HERO  = "hero"
+    HERO_BOOL = "hero_bool"
     ABILITY = "ability"
     PERIODIC = "periodic"
     ONCE = "once"
@@ -34,17 +36,16 @@ class MonitorConfig(BaseModel):
     # every other monitor requires one.
     takes_light_priority: ClassVar[bool] = True
 
-    def build(self, bus: EventBus, key: str) -> Monitor:
-        """Create the runtime monitor for this config, tagged with its type.
+    def build(self, bus: EventBus, rule: Rule) -> Monitor:
+        """Create the runtime monitor for `rule`, tagged with its type.
 
-        `key` is the bus key the monitor publishes under. The compiler passes the
-        rule's id, so every rule has its own monitor and two rules on the same
-        trigger never share (or double-fire) each other's actions.
+        The monitor publishes under the rule's id, so every rule has its own monitor
+        and two rules on the same trigger never share (or double-fire) each other's actions.
         """
-        monitor = self._create(bus, key)
+        monitor = self._create(bus, rule)
         monitor.type = self.type
         return monitor
 
     @abstractmethod
-    def _create(self, bus: EventBus, key: str) -> Monitor:
+    def _create(self, bus: EventBus, rule: Rule) -> Monitor:
         """Construct the runtime monitor."""
