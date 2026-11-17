@@ -18,7 +18,7 @@ def test_duplicate_rule_id_rejected():
 
 
 def test_same_trigger_in_two_rules_is_accepted():
-    # Each rule gets its own monitor and bus key, so this is fine (followed friends' rules rely on it)
+    # Each rule gets its own monitor and bus key, so this is fine
     RulesConfig.model_validate({"rules": [_rule("a"), _rule("b")]})
 
 

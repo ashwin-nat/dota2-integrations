@@ -70,6 +70,7 @@ const S = {
   ruleKind: "",       // All rules filters: "" | item | ability | game | reminder
   ruleAction: "",     // "" | play_sound | light | webhook | missing
   ruleSort: "default",
+  onlyDiff: true,     // Friends tab: hide rules identical to yours
   sharing: null,      // /api/sharing: folder, name, friends' rules and clips
   join: null,         // joining a shared folder from its link: { link, name, status }
   invite: null,       // /api/sharing/invite links while the invite panel is open
@@ -659,7 +660,6 @@ function renderRules() {
   return [
     h("div", { class: "board-head" }, h("h1", {}, "All rules")),
     h("p", { class: "hint" }, "Every trigger that does something. Click one to edit it, or browse Items, Heroes and Game events to add new ones."),
-    followedNote(),
     ruleToolbar(),
     !rules.length ? h("p", { class: "hint" }, S.config.rules.length ? "No rules match." : "No rules yet.") : null,
     live.length ? h("div", { class: "section-title" }, "Active", h("span", { class: "count" }, live.length)) : null,
@@ -667,15 +667,6 @@ function renderRules() {
     idle.length ? h("div", { class: "section-title" }, "Doing nothing yet", h("span", { class: "count" }, idle.length)) : null,
     idle.length ? h("div", { class: "rule-list" }, idle.map(row)) : null,
   ];
-}
-
-function followedNote() {
-  const followed = [...(S.sharing?.people || []), ...(S.sharing?.packs || [])].filter((f) => f.following);
-  if (!followed.length) return null;
-  return h("p", { class: "insp-warn followed-note" }, "Also playing sounds from ",
-    followed.flatMap((f, i) => [i ? ", " : "", h("strong", {}, f.name),
-      ` (${plural(f.rules.filter((r) => hasSound(r) && !S.config.rules.some((m) => sameMonitor(m.monitor, r.monitor) && hasSound(m))).length, "trigger")})`]),
-    ". ", h("button", { class: "linkish", onclick: () => { S.tab = "friends"; render(); } }, "Manage in Friends"));
 }
 
 function jumpTo(monitor, rule) {
@@ -1485,7 +1476,7 @@ function copyFriendRules(friend, rules, { replace = false } = {}) {
       mine[0].actions.unshift(...copy.actions.filter((a) => a.type === "play_sound"));
       continue;
     }
-    // Prefixed with the friend's name (as when their rules play via "follow"), so it never clashes with a rule of yours
+    // Prefixed with the friend's name so it never clashes with a rule of yours
     const base = `${friend.name}/${rule.id}`;
     let id = base;
     for (let n = 2; S.config.rules.some((r) => r.id === id); n++) id = `${base}_${n}`;
@@ -1499,16 +1490,6 @@ function copyFriendRules(friend, rules, { replace = false } = {}) {
   render();
   const what = rules.length === 1 ? describeTrigger(rules[0].monitor).title : `${rules.length} rules`;
   toast(`${replace ? "Replaced your sound for" : "Copied"} ${what} from ${friend.name}. Press Save to keep ${rules.length === 1 ? "it" : "them"}.`, "ok");
-}
-
-async function setFollow(friend, follow) {
-  try {
-    S.sharing = await api("/api/sharing/follow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: friend.key, follow }) });
-    toast(follow ? `${friend.name}'s sounds now play on this PC too.` : `Stopped playing ${friend.name}'s sounds.`, "ok");
-  } catch (e) {
-    toast(`Couldn't update: ${e.message}`, "err");
-  }
-  render();
 }
 
 function renderFriends() {
@@ -1687,9 +1668,7 @@ async function finishPackImport(request) {
     const res = await request;
     S.sharing = res;
     await refreshClips();
-    toast(res.pack.library
-      ? `Joined ${res.pack.name}! Its sounds play in your games now and update by themselves.`
-      : `Added ${res.pack.name}. Copy the rules you like, or turn on "Play their sounds too".`, "ok", 6000);
+    toast(`Added ${res.pack.name}. Copy the rules you like.${res.pack.library ? " It updates by itself." : ""}`, "ok", 6000);
   } catch (e) {
     toast(e.message, "err", 8000);
   }
@@ -1719,9 +1698,8 @@ const rulesOpen = new Map();
 function renderFriend(f) {
   const isPack = f.kind === "pack";
   const fresh = f.rules.filter((r) => !haveRule(r) && !clashingRules(r).length && !brokenRule(r));
-  // What following would actually play: yours win on triggers you already have
-  const playable = f.rules.filter((r) => hasSound(r) && !S.config.rules.some((m) => sameMonitor(m.monitor, r.monitor) && hasSound(m)));
-  const withSound = f.rules.filter(hasSound).length;
+  // "Different" = same trigger and same sound files in your rules; volume and odds don't count
+  const shown = S.onlyDiff ? f.rules.filter((r) => !haveRule(r)) : f.rules;
   const row = (r) => {
     const d = describeTrigger(r.monitor);
     const clash = !haveRule(r) && clashingRules(r).length > 0;
@@ -1742,29 +1720,24 @@ function renderFriend(f) {
           h("button", { class: "btn btn-sm btn-ghost", disabled: broken, title: why || "Keep yours and add theirs; both play", onclick: () => copyFriendRules(f, [r]) }, icon("plus"), "Add both"))
         : h("button", { class: "btn btn-sm", disabled: broken, title: why, onclick: () => copyFriendRules(f, [r]) }, icon("copy"), "Copy"));
   };
-  const follow = h("label", { class: "toggle", title: "Their sounds play on this PC for triggers you don't have a sound for (lights stay yours)" },
-    h("input", { type: "checkbox", checked: f.following, onchange: (e) => setFollow(f, e.target.checked) }),
-    h("span", { class: "toggle-track" }), h("span", {}, "Play their sounds too"));
+  const diff = h("label", { class: "toggle", title: "Hide rules where you already have the same sound on the same trigger (volume is ignored)" },
+    h("input", { type: "checkbox", checked: S.onlyDiff, onchange: (e) => { S.onlyDiff = e.target.checked; render(); } }),
+    h("span", { class: "toggle-track" }), h("span", {}, "Only differences"));
   const source = isPack ? (f.source ? "from a link" : "from a file") : "";
   return h("section", { class: `friend ${isPack ? "pack" : ""}` },
     h("div", { class: "friend-head" },
       h("div", { class: "friend-avatar" }, isPack ? "📦" : f.name.slice(0, 1).toUpperCase()),
       h("div", { class: "friend-name" }, h("strong", {}, f.name),
         h("div", { class: "hint" }, [`${plural(f.rules.length, "rule")}`, `${plural(f.soundboard.length, "soundboard clip")}`, source, `updated ${ago(f.updated)}`].filter(Boolean).join(" · "))),
-      follow,
+      diff,
       fresh.length ? h("button", { class: "btn btn-sm btn-gold", title: "Copy the rules for triggers you don't have yet", onclick: () => copyFriendRules(f, fresh) }, icon("copy"), `Copy new (${fresh.length})`) : null,
       isPack && f.source ? h("button", { class: "btn btn-sm btn-ghost", title: "Check the link for a newer version", onclick: () => packAction(f, "refresh") }, "↻") : null,
       isPack ? h("button", { class: "btn btn-sm btn-ghost btn-danger", title: "Remove this pack", onclick: () => packAction(f, "remove") }, "✕") : null),
-    f.following && withSound
-      ? h("p", { class: "hint follow-note" }, playable.length
-        ? `${playable.length} of their ${withSound} sounds play in your games.${withSound > playable.length ? ` The other ${withSound - playable.length} are on triggers where your own sound plays.` : ""}`
-        : "You already have your own sound for every trigger they use, so yours play.")
-      : null,
-    f.rules.length
-      ? h("details", { class: "friend-rules", open: rulesOpen.get(f.key) ?? f.rules.length <= 6, ontoggle: (e) => rulesOpen.set(f.key, e.target.open) },
-        h("summary", {}, isPack ? "Rules in this pack" : "Their rules"),
-        h("div", { class: "rule-list" }, f.rules.map(row)))
-      : h("p", { class: "hint" }, "No rules yet."));
+    !f.rules.length ? h("p", { class: "hint" }, "No rules yet.")
+      : !shown.length ? h("p", { class: "hint" }, "No differences: you have a sound for every trigger they do.")
+      : h("details", { class: "friend-rules", open: rulesOpen.get(f.key) ?? shown.length <= 6, ontoggle: (e) => rulesOpen.set(f.key, e.target.open) },
+        h("summary", {}, (isPack ? "Rules in this pack" : "Their rules") + (shown.length < f.rules.length ? ` (${shown.length} different)` : "")),
+        h("div", { class: "rule-list" }, shown.map(row))));
 }
 
 async function turnOffSharing() {
@@ -1833,7 +1806,7 @@ function renderShareSetup() {
         h("button", { class: "btn", onclick: () => choose(`${b.path.replace(/[\\/]+$/, "")}${b.path.includes("\\") ? "\\" : "/"}${(st.newFolder ?? "Dota Sounds").trim()}`, true) }, "Create & use")));
 
   return h("div", { class: "share-setup" },
-    h("p", {}, "Share sounds, soundboard clips and rules with friends through a folder you all sync, like Google Drive. Everyone keeps their own rules; you can copy theirs, or have their sounds play in your games too. Lights and webhooks stay private."),
+    h("p", {}, "Share sounds, soundboard clips and rules with friends through a folder you all sync, like Google Drive. Everyone keeps their own rules; you can copy theirs. Lights and webhooks stay private."),
     h("ol", { class: "share-steps" },
       h("li", {}, "Everyone installs ", h("strong", {}, "Google Drive for desktop"), "."),
       h("li", {}, "One person makes a folder (e.g. ", h("em", {}, "Dota Sounds"), ") and shares it with the others as ", h("strong", {}, "Editor"), "."),

@@ -24,9 +24,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src import packs, shortcuts
+from src import shortcuts
 from src.media import LOCAL_MEDIA_DIR, media_dir, media_ref, set_media_dir, unique_path
-from src.rules.config import ActionType, Rule, RulesConfig, sound_refs
+from src.rules.config import ActionType, RulesConfig, sound_refs
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,6 @@ def clean_name(name: str) -> str:
 class SharingSettings(BaseModel):
     folder: str | None = None
     name: str = Field(default_factory=_default_name)
-    # Friends (by name) and packs ("pack:<id>") whose rule sounds also play on this PC,
-    # in the order they were followed
-    following: list[str] = Field(default_factory=list)
     # Identifies this install so two friends can't publish under the same name
     device: str = Field(default_factory=lambda: uuid.uuid4().hex)
 
@@ -237,9 +234,7 @@ def configure(folder: str | None, name: str, create: bool = False) -> dict:
         copied = _bring_media(old / "media", LOCAL_MEDIA_DIR) if old and old.is_dir() else 0
         if old and old.is_dir():
             _person_path(old, _settings.name).unlink(missing_ok=True)
-        # Packs don't need the folder, so keep following those
-        packs_followed = [k for k in _settings.following if k.startswith(PACK_PREFIX)]
-        _settings = _settings.model_copy(update={"folder": None, "name": name, "following": packs_followed})
+        _settings = _settings.model_copy(update={"folder": None, "name": name})
         _save()
         set_media_dir(LOCAL_MEDIA_DIR)
         logger.info("Sharing turned off")
@@ -276,13 +271,6 @@ def configure(folder: str | None, name: str, create: bool = False) -> dict:
     publish_safely()
     logger.info(f"Sharing on: {path} as {name} ({copied} sounds copied in)")
     return {"copied": copied}
-
-
-def set_following(name: str, follow: bool) -> None:
-    global _settings
-    following = [n for n in _settings.following if n != name] + ([name] if follow else [])
-    _settings = _settings.model_copy(update={"following": following})
-    _save()
 
 
 def publish() -> None:
@@ -358,71 +346,5 @@ def friends() -> list[dict]:
             "updated": data.get("updated"),
             "rules": data.get("rules", []),
             "soundboard": data.get("soundboard", []),
-            "following": path.stem in _settings.following,
         })
     return out
-
-
-def _trigger(monitor: object) -> str:
-    m = monitor.model_dump(mode="json") if hasattr(monitor, "model_dump") else dict(monitor or {})  # type: ignore[union-attr]
-    # Blink has its own monitor type but is the same trigger as an item rule on item_blink
-    if m.get("type") == "blink":
-        m = {"type": "item", "target": "item_blink", "event": m.get("event")}
-    if m.get("type") == "periodic":  # many timers coexist, told apart by their schedule
-        return "periodic|" + "|".join(str(m.get(k)) for k in ("period", "offset", "min_time", "max_time"))
-    if m.get("type") == "once":
-        return f"once|{m.get('time')}"
-    return f"{m.get('type')}|{m.get('target', '')}|{m.get('event')}"
-
-
-def followed_rules(own_rules: list[Rule]) -> list[Rule]:
-    """Sound actions from the rules of friends this person follows, ready to compile.
-
-    Only sounds: a friend's light colours and priorities are for their room. Sounds never
-    stack: a trigger you already have a sound for keeps yours, and when several followed
-    friends use the same trigger, the friend you followed first wins.
-    """
-    folder = shared_folder()
-    taken = {
-        _trigger(r.monitor) for r in own_rules
-        if any(a.type == ActionType.PLAY_SOUND and a.enabled for a in r.actions)
-    }
-    out: list[Rule] = []
-    for key in _settings.following:
-        if key.startswith(PACK_PREFIX):
-            data = packs.load_pack(key.removeprefix(PACK_PREFIX))
-            name = data["name"] if data else key
-        else:
-            path = _person_path(folder, key) if folder else None
-            data = _read_person(path) if path and path.exists() else None
-            name = key
-        if not data:
-            continue
-        claimed: set[str] = set()  # added to `taken` only after this source, so its own rules on one trigger all stay
-        for raw in data.get("rules", []):
-            sounds = [a for a in raw.get("actions", []) if a.get("type") == ActionType.PLAY_SOUND and a.get("enabled", True)]
-            if not sounds or _trigger(raw.get("monitor")) in taken:
-                continue
-            claimed.add(_trigger(raw.get("monitor")))
-            try:
-                out.append(Rule.model_validate({"id": f"{name}/{raw.get('id')}", "monitor": raw.get("monitor"), "actions": sounds}))
-            except ValidationError as e:
-                logger.warning(f"Skipping {name}'s rule {raw.get('id')!r}: " + "; ".join(err["msg"].removeprefix("Value error, ") for err in e.errors()))
-        taken |= claimed
-    return out
-
-
-def followed_signature() -> tuple:
-    """Changes whenever a followed friend's file changes, so the engine knows to recompile."""
-    folder = shared_folder()
-    sig = []
-    for key in sorted(_settings.following):
-        if key.startswith(PACK_PREFIX):
-            path: Path | None = packs.PACKS_DIR / f"{key.removeprefix(PACK_PREFIX)}.json"
-        else:
-            path = _person_path(folder, key) if folder else None
-        try:
-            sig.append((key, path.stat().st_mtime_ns if path else None))
-        except OSError:
-            sig.append((key, None))
-    return tuple(sig)

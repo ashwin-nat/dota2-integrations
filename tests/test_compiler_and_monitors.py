@@ -124,7 +124,7 @@ def test_two_rules_on_the_same_trigger_each_fire_their_own_actions_once():
 
 
 def test_compile_skips_a_repeated_rule_id_and_keeps_the_first(caplog):
-    # Followed friends' rules are compiled without RulesConfig's duplicate-id check
+    # Rules built in code skip RulesConfig's duplicate-id check
     first = RulesConfig.model_validate({"rules": [_hero_rule("same", "HERO_KILLED", [_light(5)])]}).rules
     second = RulesConfig.model_validate({"rules": [_hero_rule("same", "HERO_RESPAWNED", [_light(6)])]}).rules
     arbiter = FakeArbiter()

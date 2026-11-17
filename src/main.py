@@ -87,7 +87,7 @@ async def main(
     executors: list[ActionExecutor] = [LightExecutor(arbiter), SoundExecutor(sound), WebhookExecutor()]
     executor_by_type = {e.action_type: e for e in executors}
     bus = EventBus(history_size=DEBUG_EVENT_HISTORY if debug else 0)
-    compiled = compile_rules(rules_config.rules + sharing.followed_rules(rules_config.rules), bus, executor_by_type)
+    compiled = compile_rules(rules_config.rules, bus, executor_by_type)
     state = GameState(compiled, bus, arbiter)
     chat_translator = translate.ChatTranslator()
     bus.subscribe(event_key("chat_message"), chat_translator.on_chat, persistent=True)
@@ -101,17 +101,13 @@ async def main(
         for executor in executors:
             executor.reset()
         arbiter.clear_all()
-        # Sounds from friends you follow fill in triggers your own rules don't cover
-        state.set_compiled_rules(
-            compile_rules(config.rules + sharing.followed_rules(config.rules), bus, executor_by_type)
-        )
+        state.set_compiled_rules(compile_rules(config.rules, bus, executor_by_type))
         sound.set_default_volume(config.sound.volume / 100)
         # The lighting driver is built once at startup
         return config.lighting != rules_config.lighting
 
     async def watch_friends() -> None:
-        """Recompile when a followed friend's rules arrive through the sync service."""
-        seen = sharing.followed_signature()
+        """Switch to the shared folder once it appears (Drive mounted late)."""
         while True:
             await asyncio.sleep(5)
             if await asyncio.to_thread(sharing.reconnect):
@@ -121,15 +117,6 @@ async def main(
                 except Exception as e:
                     logger.warning(f"Could not reload rules: {e}")
                 asyncio.get_running_loop().run_in_executor(None, sharing.warm_cache)
-            current = await asyncio.to_thread(sharing.followed_signature)
-            if current != seen:
-                seen = current
-                logger.info("A followed friend's rules changed; reloading")
-                try:
-                    reload_rules(RulesConfig.load(RULES_PATH, allow_missing_sounds=True))
-                except Exception as e:
-                    # Ending this task would shut the app down
-                    logger.warning(f"Could not reload rules: {e}")
 
     async def publish_library() -> None:
         """Keep the shared folder's library .zip current, for friends who only have its link."""
@@ -143,13 +130,12 @@ async def main(
             await asyncio.sleep(30)
 
     async def refresh_packs() -> None:
-        """Pick up new versions of packs imported from a link (watch_friends then reloads)."""
+        """Pick up new versions of packs imported from a link."""
         while True:
             # A build made for a group comes with its library link: fetch it on first run
             if (link := packs.default_library_link()) and not sharing.shared_folder() and not any(p.get("source") == link for p in packs.list_packs()):
                 try:
                     record = await asyncio.to_thread(packs.import_pack, await packs.download(link), link)
-                    sharing.set_following(f"{sharing.PACK_PREFIX}{record['id']}", True)
                     logger.info(f"Fetched the built-in library {record['name']!r}")
                 except Exception as e:
                     logger.warning(f"Could not fetch the built-in library (will retry): {e}")

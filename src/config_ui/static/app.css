@@ -709,7 +709,6 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 .friend-rule { cursor: default; }
 .friend-rule .chip .play { width: 20px; height: 20px; font-size: 8px; margin-left: -6px; }
 .have { font-size: 12px; color: var(--green); white-space: nowrap; }
-.followed-note { margin: 0 0 6px; }
 .linkish { background: none; border: 0; padding: 0; color: var(--gold-hi); text-decoration: underline; cursor: pointer; font: inherit; }
 
 .share-setup { max-width: 760px; }
@@ -760,7 +759,6 @@ label.btn { display: inline-flex; align-items: center; }
 .pack-bar input { flex: 1; min-width: 0; }
 .friend.pack .friend-avatar { font-size: 20px; }
 .copy-choice { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-.follow-note { margin: 8px 0 0; }
 .invite .share-who > .btn { justify-self: start; }
 
 /* Reminders */

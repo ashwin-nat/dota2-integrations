@@ -54,7 +54,7 @@ def _looks_shared(p: Path) -> bool:
 
 
 def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[RulesConfig], bool]) -> None:
-    """Mount /api/sharing: turn the shared folder on or off, follow friends, browse for the folder."""
+    """Mount /api/sharing: turn the shared folder on or off, browse for the folder."""
     routes = web.RouteTableDef()
 
     def sharing_state() -> dict:
@@ -72,7 +72,6 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
                     "key": f"{sharing.PACK_PREFIX}{p['id']}", "kind": "pack", "id": p["id"], "name": p["name"],
                     "source": p.get("source"), "updated": p.get("updated"), "imported": p.get("imported"),
                     "rules": p["rules"], "soundboard": p["soundboard"],
-                    "following": f"{sharing.PACK_PREFIX}{p['id']}" in s.following,
                 }
                 for p in packs.list_packs()
             ],
@@ -99,13 +98,6 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             return web.json_response({"ok": False, "error": str(e)}, status=400)
         recompile()
         return web.json_response({"ok": True, **result, **await asyncio.to_thread(sharing_state)})
-
-    @routes.post("/api/sharing/follow")
-    async def follow(request: web.Request) -> web.Response:
-        body = await request.json()
-        sharing.set_following(str(body.get("name", "")), bool(body.get("follow")))
-        recompile()
-        return web.json_response({"ok": True, **await asyncio.to_thread(sharing_state)})
 
     def list_dir(path: Path) -> dict:
         dirs = sorted(
@@ -203,7 +195,6 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
 
     @routes.post("/api/packs")
     async def import_pack(request: web.Request) -> web.Response:
-        known = {p["id"] for p in packs.list_packs()}
         try:
             if request.content_type == "application/json":
                 url = str((await request.json()).get("url", "")).strip()
@@ -224,9 +215,6 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
             return web.json_response({"ok": False, "error": str(e)}, status=400)
         except Exception as e:
             return web.json_response({"ok": False, "error": f"Couldn't import the pack: {e}"}, status=400)
-        if record.get("library") and record["id"] not in known:
-            # A shared library is for playing: its sounds play in your games straight away
-            sharing.set_following(f"{sharing.PACK_PREFIX}{record['id']}", True)
         recompile()
         sharing.publish_safely()
         return web.json_response({"ok": True, "pack": {"id": record["id"], "name": record["name"], "library": record.get("library", False)}, **await asyncio.to_thread(sharing_state)})
@@ -248,7 +236,6 @@ def setup_sharing(app: web.Application, rules_path: Path, reload: Callable[[Rule
     async def remove_pack(request: web.Request) -> web.Response:
         pack_id = request.match_info["id"]
         packs.remove_pack(pack_id)
-        sharing.set_following(f"{sharing.PACK_PREFIX}{pack_id}", False)
         recompile()
         return web.json_response({"ok": True, **await asyncio.to_thread(sharing_state)})
 
