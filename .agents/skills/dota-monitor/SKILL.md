@@ -48,9 +48,9 @@ Go down this list and stop at the first that fits.
 
 | Base | Use when | You write |
 |---|---|---|
-| `Monitor` | One-shot, stateless-ish: emits on a transition and never retracts (`MapMonitor`, `OnceMonitor`) | `evaluate`, `clear`; call `self._bus.emit(key)` |
+| `Monitor` | One-shot, stateless-ish: emits on a transition and never retracts (`MapMonitor`, `OnceMonitor`) | `evaluate`, `clear`; call `self._bus.emit(self._event_key)` |
 | `StatefulMonitor` | Something begins and later ends, no named target (`HeroMonitor`) | `evaluate`, `clear` (call `super().clear()`); `_fire()` / `_end()` |
-| `TargetedStatefulMonitor` | Watches one named item or ability (`self._target`) | same, plus `__init__(target, event_key, bus)` |
+| `TargetedStatefulMonitor` | Watches one named item or ability (`self._target`) | same; `self._target` comes from `rule.monitor.target`, so `__init__(rule, bus)` |
 
 Rules for all of them:
 
@@ -87,19 +87,19 @@ Parsing changes get a parser test too (below).
 
 Backend, in this order:
 
-1. The monitor module (`src/rules/<name>_monitor.py`, or the existing module if you extended one): config model (a `MonitorConfig` subclass with `type: Literal[MonitorType.X]`, its fields, `_create(bus, key)`) and the monitor class. One module holds both.
+1. The monitor module (`src/rules/<name>_monitor.py`, or the existing module if you extended one): config model (a `MonitorConfig` subclass with `type: Literal[MonitorType.X]`, its fields, `_create(bus, rule)`) and the monitor class. One module holds both.
 2. `MonitorType` value in `src/rules/monitor_config.py`.
-3. The config class in the `AnyMonitor` union in `src/rules/config.py` (and its import). Nothing else in the compiler changes: it calls `rule.monitor.build(bus, rule.id)`.
-4. **Sharing:** `sharing._trigger()` builds the key that decides whether a friend's rule collides with yours. The default `type|target|event` works for most monitors. Add a branch when the monitor is identified by other fields (periodic and once are examples) or has an alias (blink).
+3. The config class in the `AnyMonitor` union in `src/rules/config.py` (and its import). Nothing else in the compiler changes: it calls `rule.monitor.build(bus, rule)`.
+4. **Sharing:** the server has no trigger key (`sharing.py` just copies rules). Whether a friend's rule is "the same" as yours is decided in the editor by `sameMonitor` in `app.js` (see below). The default `type + target + event` works for most monitors; a monitor identified by other fields needs a branch there (periodic and once are examples), as one with an alias does (blink). A computed `event` (as `hero_bool` and `hero_int` serialize) already separates `field`s.
 5. **Docs:** update `CLAUDE.md` (monitor table, project structure, and any new design note, including why a special case exists) and the `dota-rules` skill if a user can now ask for the trigger.
 
 Editor (`src/config_ui/static/app.js`, vanilla, no build step):
 
-- An event list like `ITEM_EVENTS` / `ABILITY_EVENTS` / `GAME_EVENTS` entry giving the label and description the user sees.
+- An event list like `ITEM_EVENTS` / `ABILITY_EVENTS` / `GAME_EVENTS` entry giving the label and description the user sees. A `GAME_EVENTS` entry carries the monitor's extra fields in `monitor: { ... }` (e.g. `{ field: "buyback_cooldown" }` for `hero_int`); the editor merges them with `type` and `event` when it creates the rule.
 - `sameMonitor` and `monitorTarget` if the monitor is identified by something other than `type + target + event` (reminders and blink need this).
 - `describeTrigger` for the rule's title, sub-title and image.
 - `ruleKind` so the rule lands in the right "All rules" filter, and the picker path (`select(...)`, the `sel.kind` branches near the event list) so the user can pick it.
-- `ruleIdFor` suffixes if the event name makes an ugly id.
+- `ruleIdFor` suffixes if the event name makes an ugly id (`hero_buyback_cooldown_rises` became `hero_buyback_used`).
 - If the monitor has fields beyond `target` and `event`, the inspector needs controls and the save path (`RulesConfig` validation) must round-trip them.
 
 Check the editor in a browser (`uv run python -m src.main --no-browser`, open `/ui`) with sound volume set to 0 when you run the app. Create the rule, save, reload, and confirm the rule is still shown under the right filter.
@@ -116,7 +116,7 @@ A new monitor needs, at minimum:
 4. **`clear()` resets everything.** Feed frames, `compiled.clear_all()`, then repeat the first frame and check no stale previous-value effect (see `test_clear_all_resets_monitors`).
 5. **Add it to `test_every_monitor_does_nothing_when_its_snapshot_part_is_missing`.** Add a rule for the new monitor to that list; the test compiles every type and checks nothing fires or ends on a snapshot with all parts `None`.
 6. **Config round-trip.** The rule validates through `RulesConfig` (the `AnyMonitor` discriminator picks it) and bad values are rejected. Add to `tests/test_config.py` if there are fields with constraints.
-7. **Sharing key** if you touched `sharing._trigger`: a test in `tests/test_sharing.py` that two rules differing in the identifying field are different triggers and equal ones are the same.
+7. **Sharing** has no server-side key to test; `sameMonitor` is in `app.js`, so check it in the editor (a friend's rule on the same trigger is hidden under "Only differences", one on a different field is not).
 8. **Parser test** for a new ability, item or other shape: raw dict in, expected typed object out, including that existing shapes still parse to their old types.
 
 When the work started from a real recording, add a **regression test from that data**: copy the few relevant frames inline (as tuples or small dicts, the way the Invoker, Kez and Largo tests do), never reference a file in `recordings/` because that folder is gitignored and absent in CI. Name the test after the hero or situation, and put a comment saying what the real game did.
@@ -136,7 +136,7 @@ When the implementation and tests are done and the suite passes, give the user a
 **`rules.json` schema implications**
 - The exact new or changed `monitor` block, as a JSON example (`type`, fields, allowed `event` values).
 - Whether existing rules still load unchanged (they should; say so, or say what breaks and why).
-- Any new validation rule, and any effect on sharing (does a friend's rule on the same trigger collide with yours, per `_trigger`) or on the editor (new picker entry, new inspector field).
+- Any new validation rule, and any effect on sharing (does a friend's rule on the same trigger count as the same as yours, per `sameMonitor` in `app.js`) or on the editor (new picker entry, new inspector field).
 - Whether `rules.example.json` or the `dota-rules` skill needed an update.
 
 Then stop and let the user review. **Do not commit until they explicitly approve.** If they ask for changes, make them and give the summary again; approval of an earlier version doesn't carry over. Once they approve, commit on the current branch (no new branch, no push, no attribution trailers).
