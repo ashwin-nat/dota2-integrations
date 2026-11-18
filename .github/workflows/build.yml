@@ -23,11 +23,12 @@ jobs:
         include:
           - os: windows-latest
             asset: soundbo-windows.exe
-          - os: macos-latest
-            asset: soundbo-mac.zip
-          # macos-latest is Apple Silicon only; Intel Macs need their own build
-          - os: macos-15-intel
-            asset: soundbo-mac-intel.zip
+          # TEMP: mac builds disabled during an Apple outage; restore after v0.1.2
+          # - os: macos-latest
+          #   asset: soundbo-mac.zip
+          # # macos-latest is Apple Silicon only; Intel Macs need their own build
+          # - os: macos-15-intel
+          #   asset: soundbo-mac-intel.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
