@@ -295,7 +295,10 @@ if __name__ == "__main__":
     _enter_app_dir()
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true", help="keep recent rule events in memory so /state (and the replay stepper) can show them")
-    parser.add_argument("--record", action="store_true", help="keep incoming payloads in memory; /record/save writes them to recordings/*.jsonl")
+    # TEMPORARY: recording is on by default in every build (a double-clicked exe can't take arguments).
+    # Remove the default (back to action="store_true") and the CLAUDE.md note when it is no longer needed.
+    parser.add_argument("--record", action=argparse.BooleanOptionalAction, default=True,
+                        help="keep incoming payloads in memory; /record/save writes them to recordings/*.jsonl (default: on, temporarily)")
     parser.add_argument("--no-browser", action="store_true", help="do not open the rules editor in the browser")
     parser.add_argument("--tray", action=argparse.BooleanOptionalAction, default=getattr(sys, "frozen", False),
                         help="show a menu bar / tray icon (default in the packaged app)")
