@@ -686,9 +686,14 @@ function jumpTo(monitor, rule) {
   }
 }
 
+const HIDDEN_ITEMS = new Set([
+  "item_ultimate_scepter", "item_ultimate_scepter_2", "item_ultimate_scepter_roshan",
+  "item_aghanims_shard", "item_aghanims_shard_roshan",
+]);
+
 function renderItems() {
   const q = S.itemQuery.toLowerCase();
-  const items = S.catalog.items.filter((i) => !q || i.name.toLowerCase().includes(q) || i.key.includes(q));
+  const items = S.catalog.items.filter((i) => !HIDDEN_ITEMS.has(i.key)).filter((i) => !q || i.name.toLowerCase().includes(q) || i.key.includes(q));
   const groups = ["Basics", "Upgrades", "Consumables", "Secret Shop", "Neutral"];
   const search = h("input", { type: "search", placeholder: "Search items…", value: S.itemQuery, "aria-label": "Search items" });
   search.addEventListener("input", (e) => { S.itemQuery = e.target.value; rerenderKeepFocus(search); });
