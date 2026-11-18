@@ -96,6 +96,8 @@ tools/frames.py                # print how one ability/item/hero block changes a
 
 ## Key Design Decisions
 
+A block diagram of the live flow (ingress, rule engine, actions) is in `docs/architecture.md`.
+
 - **No schema assumptions on raw state** — GSI payload is stored as an opaque `dict`; typed state (`Items`, `MapState`) is parsed alongside it.
 - **Latest snapshot wins** — each `state.update(data)` fully replaces the previous state.
 - **Transport-agnostic state layer** — `GameState` has no aiohttp dependency.

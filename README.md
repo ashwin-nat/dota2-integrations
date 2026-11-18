@@ -149,6 +149,8 @@ tools/replay.py        # replay and step through recordings
 
 ## Design
 
+See [docs/architecture.md](docs/architecture.md) for a block diagram of the live flow.
+
 - Incoming payloads are stored as opaque `dict` — no schema assumptions.
 - Each new payload fully replaces the previous state (no merging).
 - `GameState` has no HTTP dependency; handler receives it via `functools.partial`.
