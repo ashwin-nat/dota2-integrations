@@ -62,6 +62,7 @@ Read this before adding any `light` action.
   - `ITEM_LOST`: until the item comes back
   - `CHARGED` / `OVERCHARGED`: while Midas has that many charges
   - `HERO_KILLED`: while dead; `HERO_RESPAWNED`: while alive, i.e. most of the time
+  - `hero_int` `BUYBACK_COOLDOWN_RISES` ("buyback used"): a moment, the frame the buyback is bought: `{"type": "hero_int", "field": "buyback_cooldown"}`
 
   When a rule's timing would keep a colour on for a long time (ITEM_ACQUIRED, COOLDOWN_READY, HERO_RESPAWNED), point this out before adding it. A sound-only rule is often what the user actually wants.
 - `PAUSED` / `UNPAUSED` are map events, so a light on them replaces the baseline until the next day/night change. Warn the user about that.

@@ -21,6 +21,10 @@ HERO_BOOL_FIELDS: tuple[str, ...] = tuple(
 )
 
 
+# Hero numbers a hero_int rule can watch
+HERO_INT_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(HeroState) if f.type == "int | None")
+
+
 class HeroMonitorConfig(MonitorConfig):
     type: Literal[MonitorType.HERO]
     event: Literal["HERO_KILLED", "HERO_RESPAWNED"]
@@ -50,6 +54,28 @@ class HeroBoolMonitorConfig(MonitorConfig):
 
     def _create(self, bus: EventBus, rule: Rule) -> HeroBoolMonitor:
         return HeroBoolMonitor(rule, bus)
+
+
+class HeroIntMonitorConfig(MonitorConfig):
+    """Fires the moment one of the hero's numbers (`field`) rises, e.g. `buyback_cooldown` when buyback is used."""
+    type: Literal[MonitorType.HERO_INT]
+    field: str  # a HeroState int, e.g. "buyback_cooldown"
+
+    @field_validator("field")
+    @classmethod
+    def field_must_be_a_hero_number(cls, v: str) -> str:
+        if v not in HERO_INT_FIELDS:
+            raise ValueError(f"field must be one of {', '.join(HERO_INT_FIELDS)}, got: {v!r}")
+        return v
+
+    # Serialized like every other monitor's `event`, so the editor can tell triggers apart by type + event
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def event(self) -> str:
+        return f"{self.field.upper()}_RISES"
+
+    def _create(self, bus: EventBus, rule: Rule) -> HeroIntMonitor:
+        return HeroIntMonitor(rule, bus)
 
 
 class HeroBoolMonitor(StatefulMonitor):
@@ -93,3 +119,33 @@ class HeroAliveMonitor(HeroBoolMonitor):
 
     def _settings(self, rule: Rule) -> tuple[str, bool]:
         return "alive", rule.monitor.event == "HERO_RESPAWNED"
+
+
+class HeroIntMonitor(StatefulMonitor):
+    """Fires when a hero number is higher than in the previous update, and ends on the next one (a moment).
+
+    The first update only records the number, so joining mid-game does not fire. Buyback is
+    the motivating case: `buyback_cooldown` jumps 0 -> a large value (a game-time stamp, not a
+    countdown) in the frame the buyback is bought, and stays there.
+    """
+
+    def __init__(self, rule: Rule, bus: EventBus) -> None:
+        super().__init__(rule, bus)
+        self._field = cast("HeroIntMonitorConfig", rule.monitor).field
+        self._prev: int | None = None
+
+    def evaluate(self, snap: StateSnapshot) -> None:
+        hero = snap.hero
+        if hero is None:
+            return
+        current = getattr(hero, self._field)
+        if current is None:
+            return
+        self._end()
+        if self._prev is not None and current > self._prev:
+            self._fire()
+        self._prev = current
+
+    def clear(self) -> None:
+        super().clear()
+        self._prev = None

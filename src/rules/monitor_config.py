@@ -19,6 +19,7 @@ class MonitorType(StrEnum):
     MAP   = "map"
     HERO  = "hero"
     HERO_BOOL = "hero_bool"
+    HERO_INT = "hero_int"
     ABILITY = "ability"
     PERIODIC = "periodic"
     ONCE = "once"

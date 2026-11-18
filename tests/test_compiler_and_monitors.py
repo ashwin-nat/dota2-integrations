@@ -101,6 +101,7 @@ def test_every_monitor_does_nothing_when_its_snapshot_part_is_missing():
         {"id": "h", "monitor": {"type": "hero", "event": "HERO_KILLED"}, "actions": [_light(7)]},
         {"id": "a", "monitor": {"type": "ability", "target": "x", "event": "COOLDOWN_STARTED"}, "actions": [_light(8)]},
         {"id": "p", "monitor": {"type": "periodic", "period": 30}, "actions": [_light(9)]},
+        {"id": "hi", "monitor": {"type": "hero_int", "field": "buyback_cooldown"}, "actions": [_light(10)]},
         {"id": "mp", "monitor": {"type": "map", "event": "PAUSED"}, "actions": [{"type": "light", "r": 1, "g": 1, "b": 1}]},
     ]
     compiled, bus, arbiter, _ = _setup(rules)
@@ -366,3 +367,58 @@ def test_hero_bool_event_is_serialized_for_the_editor():
     assert dumped["event"] == "AGHANIMS_SHARD_TRUE"
     # the editor sends `event` back along with field/value; it is accepted and recomputed
     RulesConfig.model_validate({"rules": [{**rule, "monitor": dumped}]})
+
+
+def _buyback_rule():
+    return {"id": "bb", "monitor": {"type": "hero_int", "field": "buyback_cooldown"}, "actions": [_light(5)]}
+
+
+def _bb_snap(cooldown):
+    return StateSnapshot(None, None, None, SimpleNamespace(buyback_cooldown=cooldown), None, None)
+
+
+def test_hero_int_buyback_fires_once_on_the_rise_and_ends_next_frame():
+    # Real Huskar and Vishnu games: buyback_cooldown went 0 -> 3066 / 3079 (a game-time stamp, not a
+    # countdown) in the frame the buyback was bought, and then stayed at that value.
+    compiled, _, arbiter, _ = _setup([_buyback_rule()])
+    for cooldown in (0, 0, 0, 3066, 3066, 3066):
+        compiled.evaluate_all(_bb_snap(cooldown))
+    assert arbiter.calls == [("set", 5, (1, 2, 3)), ("clear", 5)]
+
+
+def test_hero_int_does_not_fire_on_first_frame_or_when_value_falls():
+    compiled, _, arbiter, _ = _setup([_buyback_rule()])
+    compiled.evaluate_all(_bb_snap(3066))   # joined with the buyback already used: only records
+    compiled.evaluate_all(_bb_snap(3066))
+    compiled.evaluate_all(_bb_snap(0))      # cooldown over
+    assert arbiter.calls == []
+
+
+def test_hero_int_ignores_missing_hero_and_missing_field_without_losing_its_place():
+    compiled, _, arbiter, _ = _setup([_buyback_rule()])
+    compiled.evaluate_all(_bb_snap(0))
+    compiled.evaluate_all(_bb_snap(None))
+    compiled.evaluate_all(StateSnapshot(None, None, None, None, None, None))
+    compiled.evaluate_all(_bb_snap(3066))
+    assert arbiter.calls == [("set", 5, (1, 2, 3))]
+
+
+def test_hero_int_clear_resets_the_previous_value():
+    compiled, _, arbiter, _ = _setup([_buyback_rule()])
+    compiled.evaluate_all(_bb_snap(0))
+    compiled.clear_all()
+    compiled.evaluate_all(_bb_snap(3066))   # first frame of a new match: records only
+    assert arbiter.calls == []
+
+
+def test_hero_int_rejects_non_number_fields_and_serializes_its_event():
+    for bad in ("stunned", "name", "nope"):
+        rule = {"id": "s", "monitor": {"type": "hero_int", "field": bad}, "actions": [_light(5)]}
+        try:
+            RulesConfig.model_validate({"rules": [rule]})
+        except ValueError:
+            continue
+        raise AssertionError(f"{bad} was accepted")
+    dumped = RulesConfig.model_validate({"rules": [_buyback_rule()]}).model_dump(mode="json")["rules"][0]["monitor"]
+    assert dumped["event"] == "BUYBACK_COOLDOWN_RISES"
+    RulesConfig.model_validate({"rules": [{**_buyback_rule(), "monitor": dumped}]})

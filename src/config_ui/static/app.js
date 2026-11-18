@@ -32,6 +32,7 @@ const GAME_EVENTS = [
   { type: "hero", event: "HERO_RESPAWNED", label: "You respawned", sub: "Back from the fountain", glyph: "✨" },
   { type: "hero_bool", event: "AGHANIMS_SCEPTER_TRUE", label: "Aghanim's Scepter", sub: "You get the Scepter upgrade", img: itemImg("ultimate_scepter"), monitor: { field: "aghanims_scepter", value: true } },
   { type: "hero_bool", event: "AGHANIMS_SHARD_TRUE", label: "Aghanim's Shard", sub: "You get the Shard upgrade", img: itemImg("aghanims_shard"), monitor: { field: "aghanims_shard", value: true } },
+  { type: "hero_int", event: "BUYBACK_COOLDOWN_RISES", label: "Buyback used", sub: "You buy back into the game", glyph: "💰", monitor: { field: "buyback_cooldown" } },
   { type: "midas", event: "CHARGED", label: "Midas ready", sub: "1 charge available", img: itemImg("hand_of_midas") },
   { type: "midas", event: "OVERCHARGED", label: "Midas overcharged", sub: "2 charges, wasted gold!", img: itemImg("hand_of_midas") },
 ];
@@ -180,7 +181,7 @@ function rulesForTarget(target) {
 function ruleIdFor(monitor) {
   const target = (monitor.target || (monitor.field ? "hero" : monitor.type)).replace(/^item_/, "");
   const suffix = {
-    ITEM_ACQUIRED: "bought", COOLDOWN_STARTED: "used", COOLDOWN_READY: "ready", ITEM_LOST: "lost",
+    ITEM_ACQUIRED: "bought", BUYBACK_COOLDOWN_RISES: "buyback_used", COOLDOWN_STARTED: "used", COOLDOWN_READY: "ready", ITEM_LOST: "lost",
   }[monitor.event] || monitor.event.toLowerCase();
   let id = `${target}_${suffix}`;
   for (let n = 2; S.config.rules.some((r) => r.id === id); n++) id = `${target}_${suffix}_${n}`;

@@ -72,7 +72,7 @@ src/
 │   ├── item_monitors.py       # item / midas / blink configs + monitors + registries
 │   ├── ability_monitors.py    # ability config + monitor (cooldown-started tracking)
 │   ├── map_monitor.py         # map config + monitor (day/night, pause)
-│   ├── hero_monitor.py        # hero configs + monitors: HeroAliveMonitor (killed / respawned, ends) and generic stateful HeroBoolMonitor (any HeroState bool via `field`; HeroAliveMonitor is its alive case)
+│   ├── hero_monitor.py        # hero configs + monitors: HeroAliveMonitor (killed / respawned, ends) and generic stateful HeroBoolMonitor (any HeroState bool via `field`; HeroAliveMonitor is its alive case) and HeroIntMonitor (fires when any HeroState int rises)
 │   ├── periodic_monitor.py    # periodic and once configs + monitors (game clock)
 │   └── actions/
 │       ├── base.py            # ActionBinding, ActionExecutor ABC
@@ -135,6 +135,7 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 | `periodic`| `PeriodicMonitorConfig` | fires when the game clock passes `k*period + offset` (`period` ≥ 1 s, `offset` -59..59, default 0; optional `min_time` / `max_time` clock seconds, inclusive, limit which triggers fire) |
 | `once`   | `OnceMonitorConfig`  | fires once per match when the game clock reaches `time` seconds (may be negative) |
 | `hero_bool` | `HeroBoolMonitorConfig` | active while a `HeroState` bool `field` equals `value` (default true), from the change to it; the editor offers Aghanim's Scepter and Shard under Game events. `event` is computed (`AGHANIMS_SHARD_TRUE`) and serialized so the editor matches triggers like the others |
+| `hero_int` | `HeroIntMonitorConfig` | fires the moment a `HeroState` int `field` is higher than in the previous update, ends on the next one (a moment). The editor offers Buyback used (`buyback_cooldown`, event `BUYBACK_COOLDOWN_RISES`) under Game events. `buyback_cooldown` is a game-time stamp, not a countdown: it jumps 0 -> ~3000 in the frame the buyback is bought and stays there, so only a rise means anything. `alive` flips True in the same frame, so a respawn rule fires then too |
 
 In the editor, periodic and once rules are "Reminders" under Game events; a "Repeats" toggle switches a reminder between the two (off shows just the target game time). Repeating ones have presets (stack camps, bounty, power and wisdom runes, lotus) or a custom timer, with "every", an early/late shift (offset), "from" / "until" (`m:ss`) and a preview of the first play times. Each reminder is its own rule (`reminder_<preset>`); the compiler keys periodic monitors per rule, so two reminders on the same schedule each fire, and `sharing._trigger` keys them by schedule. `periodic` monitors (`periodic_monitor.py`) use `map.clock_time`, which starts negative but never goes backwards. A trigger fires when it lies in (previous clock, current clock]; a gap spanning several triggers fires once, and the first update after start or a match change only records the clock.
 
