@@ -26,6 +26,7 @@ class Event:
     game_time: int | None
     clock_time: int | None
     payload: EventPayload | None = None  # parsed data for events that carry some (e.g. a chat message)
+    initial: bool = False  # from a monitor's first update, so the state was already true; nothing just happened
 
 
 Handler = Callable[[Event], None]  # plain function: must not block or await
@@ -41,6 +42,7 @@ class EventBus:
         # Stamped onto events; GameState sets both on each update, before monitors run.
         self.game_time: int | None = None
         self.clock_time: int | None = None  # negative before the horn
+        self.initial = False  # set by Monitor.run while a monitor handles its first update
         self.published = 0  # total events published
         self.history: deque[Event] | None = deque(maxlen=history_size) if history_size > 0 else None
 
@@ -64,7 +66,7 @@ class EventBus:
         self._publish(key, EventType.ENDED)
 
     def _publish(self, key: str, type_: EventType, payload: EventPayload | None = None) -> None:
-        event = Event(key, type_, self.game_time, self.clock_time, payload)
+        event = Event(key, type_, self.game_time, self.clock_time, payload, self.initial)
         self.published += 1
         if self.history is not None:
             self.history.append(event)

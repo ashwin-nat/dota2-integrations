@@ -56,6 +56,7 @@ Rules for all of them:
 
 - Return early when the snapshot part you need is `None`, and **do not end an active state in that case**. The "missing snapshot part" test enforces this.
 - `_fire()` sets the monitor active and emits; `_end()` is a no-op unless active, so call it freely on every evaluation.
+- The compiler calls `run(snap)`, which wraps `evaluate` and marks events from a monitor's first update `initial` (sounds skip them). Tests that call `evaluate` directly bypass that; use `run` to test it (see `tests/test_initial_events.py`).
 - Keep per-match memory (previous values, seen flags, slot ids) in `__init__` and reset every bit of it in `clear()`. A forgotten field leaks one match into the next.
 - Only set `runs_before_horn = True` if the monitor reads nothing but the map clock (periodic and once). Pre-game frames carry no hero, items or abilities.
 - `takes_light_priority = False` only if the monitor sets the baseline colour (map). Everything else requires a light priority.

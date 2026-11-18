@@ -42,6 +42,23 @@ class Monitor(ABC):
         self._rule = rule
         self._event_key = rule.id  # the bus key this monitor publishes under
         self._bus = bus
+        self._seen_update = False
+
+    def run(self, snap: StateSnapshot) -> None:
+        """Evaluate one update. Events published during a monitor's first update since start or
+        `reset()` are marked initial: the state was unknown before, so they report what is already
+        true (starting items, day/night), not something that happened. Sounds skip them."""
+        self._bus.initial = not self._seen_update
+        self._seen_update = True
+        try:
+            self.evaluate(snap)
+        finally:
+            self._bus.initial = False
+
+    def reset(self) -> None:
+        """Clear per-match state and forget that an update was seen (on a match change)."""
+        self._seen_update = False
+        self.clear()
 
     @abstractmethod
     def evaluate(self, snap: StateSnapshot) -> None:

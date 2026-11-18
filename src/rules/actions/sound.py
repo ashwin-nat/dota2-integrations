@@ -27,8 +27,8 @@ class SoundExecutor(ActionExecutor[PlaySoundAction]):
 
     def on_event(self, event: Event) -> None:
         """Queue every sound bound to the event's key on STARTED; ENDED is ignored."""
-        if event.type is not EventType.STARTED:
-            return
+        if event.type is not EventType.STARTED or event.initial:
+            return  # an initial event is a state already true on first look, not something that just happened
         for binding in self._bindings.get(event.key, []):
             self._queue.put_nowait((binding, event))
 
