@@ -134,6 +134,9 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
 class ChargeOfDarknessCooldownStartedMonitor(AbilityCooldownStartedMonitor):
     """Spirit Breaker's Charge of Darkness: fire once, when it is cast.
 
+    Why its own class: the game restarts the cooldown when the hero arrives,
+    so the generic monitor is fired twice per long charge. Details:
+
     The game starts the cooldown when you cast it, and then starts it again
     when Spirit Breaker reaches the target (16 -> 22 in the long charge in
     recordings/charge_trigger_twice_bug.jsonl). The ability itself stays in its

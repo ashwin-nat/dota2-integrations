@@ -23,14 +23,22 @@ class ItemMonitorConfig(TargetedMonitorConfig):
 
 
 class MidasMonitorConfig(TargetedMonitorConfig):
-    """Monitor for Hand of Midas charge-specific events."""
+    """Monitor for Hand of Midas charge-specific events.
+
+    Why its own type: what matters for Midas is its charge count (0-2), which the generic item
+    events (cooldown, in inventory) don't look at. Midas bought/lost still uses the `item` type.
+    """
     type: Literal[MonitorType.MIDAS]
     target: Literal["item_hand_of_midas"] = Field("item_hand_of_midas", exclude=True)
     event: Literal["CHARGED", "OVERCHARGED"]
 
 
 class BlinkMonitorConfig(TargetedMonitorConfig):
-    """Monitor for Blink Dagger item events: an `item` rule on item_blink, with its own editor entry."""
+    """Monitor for Blink Dagger item events: an `item` rule on item_blink, with its own editor entry.
+
+    Why its own type: only so Blink gets its own card in the editor. The behaviour lives in the
+    item classes (`uses_classes_of`), with BlinkCooldownStartedMonitor for its cancel penalty.
+    """
     type: Literal[MonitorType.BLINK]
     target: Literal["item_blink"] = Field("item_blink", exclude=True)
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
@@ -193,7 +201,11 @@ class MidasOverchargedMonitor(TargetedStatefulMonitor):
 
 
 class BlinkCooldownStartedMonitor(CooldownStartedMonitor):
-    """Fires when Blink Dagger is used (cooldown 0 â†’ >0), ignoring cancel-penalty cooldowns (max_cooldown==4)."""
+    """Fires when Blink Dagger is used (cooldown 0 -> >0), ignoring cancel-penalty cooldowns (max_cooldown==4).
+
+    Why its own class: taking damage puts Blink on a 3 s cooldown without it being used, which
+    the generic item monitor would read as a cast.
+    """
     for_target = "item_blink"
 
     def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:
@@ -208,6 +220,9 @@ BKB_BUFF_SECONDS = 10
 
 class BkbCooldownStartedMonitor(CooldownStartedMonitor):
     """Active for the BKB buff window after use, not the whole cooldown.
+
+    Why its own class: the generic monitor stays active for the whole cooldown, so a BKB light
+    would outlast the buff by a minute. It also counts a refresh + reuse within one update as a use.
 
     Since the incoming data does not contain buff info,
     The buff window is measured on the item's own cooldown (which counts down in game

@@ -115,7 +115,11 @@ class HeroBoolMonitor(StatefulMonitor):
 
 
 class HeroAliveMonitor(HeroBoolMonitor):
-    """HERO_KILLED is active while the hero is dead, HERO_RESPAWNED while alive."""
+    """HERO_KILLED is active while the hero is dead, HERO_RESPAWNED while alive.
+
+    Why its own class: death/respawn came before hero_bool and keeps its legacy `hero` config and
+    event names, so this maps those events onto the `alive` flag instead of reading field/value.
+    """
 
     def _settings(self, rule: Rule) -> tuple[str, bool]:
         return "alive", rule.monitor.event == "HERO_RESPAWNED"
