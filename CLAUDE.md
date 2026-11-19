@@ -180,6 +180,8 @@ In the editor, periodic and once rules are "Reminders" under Game events; a "Rep
 
 Ability monitors follow an ability that transforms in place (Centaur's `centaur_work_horse` becomes `centaur_mount` in the same slot while active): they remember the target's slot, and the target's name vanishing from a slot while it was ready counts as the cooldown starting (fired once; the later revert does not fire again). That only counts when exactly one new name appeared that frame and it was not in any slot the frame before, so Invoker's rolling slot shifts and Kez's/Largo's stance switches (several slots renamed at once) do not fire.
 
+Charge of Darkness has its own subclass (`ABILITY_SPECIFIC_REGISTRIES`, keyed by target, like items): the game restarts its cooldown when the hero arrives, which the generic rule below would read as a second cast, so only a jump from 0 counts.
+
 Ability cooldowns fire on any rise in `cooldown`, not only 0 -> >0, because frames arrive about 1 s apart and a short cooldown recast the instant it comes up can jump 1 -> 3 without a zero frame. Abilities with charges (Shrapnel, Demonic Purge) parse as `ChargeAbility` (`charges`, `max_charges`, `charge_cooldown`); for them `cooldown` doesn't track the recharge, so a cast is a drop in `charges`, and the monitor is active while a charge is recharging.
 
 ## Record, replay and debugging

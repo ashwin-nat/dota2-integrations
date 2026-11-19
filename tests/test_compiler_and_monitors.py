@@ -213,6 +213,23 @@ def test_ability_recast_fires_without_a_zero_cooldown_frame():
     assert len(starts) == 3
 
 
+def test_charge_of_darkness_fires_once_on_cast_not_on_arrival():
+    # recordings/charge_trigger_twice_bug.jsonl: the cast reads 22, the arrival restarts the
+    # running cooldown (16 -> 22). That rise is not a cast. Short charge: 22 -> 22, no rise.
+    from src.state.abilities import Abilities, Ability
+
+    def frame(cooldown):
+        a = Ability("ability0", "spirit_breaker_charge_of_darkness", 1, cooldown == 0, False, True,
+                    cooldown, 23, False)
+        return StateSnapshot(None, None, Abilities({"ability0": a}), None, None, None)
+
+    target = ["spirit_breaker_charge_of_darkness"]
+    long = [0, 22, 21, 20, 19, 18, 16, 22, 21, 20, 0, 22]
+    assert _ability_starts(target, [frame(c) for c in long]) == {target[0]: 2}
+    short = [0, 22, 22, 21, 19]
+    assert _ability_starts(target, [frame(c) for c in short]) == {target[0]: 1}
+
+
 def test_charge_based_ability_fires_when_a_charge_is_spent():
     # Shrapnel keeps cooldown at 0; casting only lowers `charges`, regen raises them.
     from src.state.abilities import Abilities, ChargeAbility

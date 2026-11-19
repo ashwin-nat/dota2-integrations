@@ -17,7 +17,8 @@ class AbilityMonitorConfig(MonitorConfig):
     event: Literal["COOLDOWN_STARTED"]
 
     def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
-        return ABILITY_MONITOR_REGISTRY[self.event](rule, bus)
+        registry = ABILITY_SPECIFIC_REGISTRIES.get(self.target, ABILITY_MONITOR_REGISTRY)
+        return registry[self.event](rule, bus)
 
 
 class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
@@ -100,7 +101,7 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
         cooldown = ability.cooldown
         if (
             self._prev_cooldown is not None
-            and cooldown > self._prev_cooldown
+            and self._is_cast(self._prev_cooldown, cooldown)
             and not self._transformed
         ):
             # A rise means a cast. Frames arrive ~1 s apart, so a short cooldown
@@ -112,6 +113,10 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
         if cooldown == 0 or self._transformed:
             self._transformed = False
         self._prev_cooldown = cooldown
+
+    def _is_cast(self, prev_cooldown: int, cooldown: int) -> bool:
+        """Did the cooldown change between two frames mean the ability was cast?"""
+        return cooldown > prev_cooldown
 
     def _reset_tracking(self) -> None:
         self._prev_cooldown = None
@@ -130,4 +135,27 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
 # Registry: event name → monitor class
 ABILITY_MONITOR_REGISTRY: dict[str, type[TargetedStatefulMonitor]] = {
     "COOLDOWN_STARTED": AbilityCooldownStartedMonitor,
+}
+
+
+class ChargeOfDarknessCooldownStartedMonitor(AbilityCooldownStartedMonitor):
+    """Spirit Breaker's Charge of Darkness: fire once, when it is cast.
+
+    The game starts the cooldown when you cast it, and then starts it again
+    when Spirit Breaker reaches the target (16 -> 22 in the long charge in
+    recordings/charge_trigger_twice_bug.jsonl). The ability itself stays in its
+    slot under the same name, so the transform handling never sees it. To the
+    generic monitor that second jump looks like another cast, but nothing was
+    cast: the hero just arrived. So here only a jump from "ready" (cooldown 0)
+    counts as a cast. (On a short charge the second start gives the same number
+    as the first, so it never looked like a jump in the first place.)
+    """
+
+    def _is_cast(self, prev_cooldown: int, cooldown: int) -> bool:
+        return prev_cooldown == 0 and cooldown > 0
+
+
+# Abilities not listed here fall back to ABILITY_MONITOR_REGISTRY. Keyed by target.
+ABILITY_SPECIFIC_REGISTRIES: dict[str, dict[str, type[TargetedStatefulMonitor]]] = {
+    "spirit_breaker_charge_of_darkness": {"COOLDOWN_STARTED": ChargeOfDarknessCooldownStartedMonitor},
 }
