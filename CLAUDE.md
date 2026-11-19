@@ -81,7 +81,7 @@ src/
 │       └── webhook.py         # WebhookExecutor — queue + worker, cooldown
 ├── config_ui/
 │   ├── routes.py              # /ui editor + /api (config get/put, media list/upload, play, catalog)
-│   ├── catalog.py             # hero/ability/item names from dotaconstants, cached in .cache/catalog.json
+│   ├── catalog.py             # hero/ability/item names from dotaconstants, cached in .cache/catalog.json; the newest release is looked up (jsDelivr, at most every 6 h) and the cache refetched when it differs from the cached `game_version`, falling back to the cache or `PINNED_VERSION` if that fails
 │   ├── soundboard.py          # soundboard clips API (create/edit/delete/play, link fetch via yt-dlp)
 │   ├── files.py               # allowed audio extensions, safe_filename()
 │   ├── sharing_routes.py      # /api/sharing (on/off, folder browser) and /api/pack(s) (export, import, refresh, remove)
