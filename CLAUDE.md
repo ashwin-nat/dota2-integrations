@@ -69,7 +69,7 @@ src/
 │   ├── compiler.py            # compile_rules() — one monitor per rule, binds actions to executors; CompiledRules
 │   ├── bus.py                 # EventBus — synchronous topic router; Event, EventType
 │   ├── monitor_base.py        # StateSnapshot, Monitor ABC, StatefulMonitor (_fire / _end)
-│   ├── item_monitors.py       # item / midas / blink configs + monitors + registries
+│   ├── item_monitors.py       # item / midas / blink configs + monitors (classes found by for_type/for_event/for_target)
 │   ├── ability_monitors.py    # ability config + monitor (cooldown-started tracking)
 │   ├── map_monitor.py         # map config + monitor (day/night, pause)
 │   ├── hero_monitor.py        # hero configs + monitors: HeroAliveMonitor (killed / respawned, ends) and generic stateful HeroBoolMonitor (any HeroState bool via `field`; HeroAliveMonitor is its alive case) and HeroIntMonitor (fires when any HeroState int rises)
@@ -132,8 +132,10 @@ Rules are loaded from `rules.json` (array of `Rule` objects) and compiled once a
 |----------|----------------------|-------------------------------------------------|
 | `item`   | `ItemMonitorConfig`  | `COOLDOWN_READY`, `COOLDOWN_STARTED`, `ITEM_ACQUIRED`, `ITEM_LOST` |
 | `midas`  | `MidasMonitorConfig` | `CHARGED` (0→1 charge), `OVERCHARGED` (→2 charges) |
+| `blink`  | `BlinkMonitorConfig` | same events as `item`, target fixed to `item_blink` (its own editor card; uses the item classes) |
 | `map`    | `MapMonitorConfig`   | `DAYTIME_STARTED`, `NIGHTTIME_STARTED`          |
-| `ability`| `AbilityMonitorConfig` | `COOLDOWN_STARTED` (cooldown 0 → > 0)         |
+| `hero`   | `HeroMonitorConfig`  | `HERO_KILLED`, `HERO_RESPAWNED` (`HeroAliveMonitor`) |
+| `ability`| `AbilityMonitorConfig` | `COOLDOWN_STARTED` (any rise in cooldown, or a drop in charges; see below) |
 | `periodic`| `PeriodicMonitorConfig` | fires when the game clock passes `k*period + offset` (`period` ≥ 1 s, `offset` -59..59, default 0; optional `min_time` / `max_time` clock seconds, inclusive, limit which triggers fire) |
 | `once`   | `OnceMonitorConfig`  | fires once per match when the game clock reaches `time` seconds (may be negative) |
 | `hero_bool` | `HeroBoolMonitorConfig` | active while a `HeroState` bool `field` equals `value` (default true), from the change to it; the editor offers Aghanim's Scepter and Shard under Game events. `event` is computed (`AGHANIMS_SHARD_TRUE`) and serialized so the editor matches triggers like the others |
@@ -205,4 +207,4 @@ uv run pyinstaller --onefile --windowed --paths . --name Soundbo --hidden-import
 
 The `--add-data` is required: without the editor's static files the server crashes on startup. On startup the app opens the editor (`/ui`) in the default browser; pass `--no-browser` or set `GSI_NO_BROWSER=1` to skip that. The editor's power button (`POST /api/shutdown`) sets the stop event in `main()`, which cancels every task so the port is closed before the process exits.
 
-`.github/workflows/build.yml` (manual) builds Windows (`.exe`) and macOS (`.app` for Apple Silicon and Intel, zipped with `ditto` so the bundle's symlinks and signature survive) from the current code as workflow artifacts. `release.yml` (manual, takes a tag) reuses it and publishes a GitHub release with the binaries plus `rules.example.json` (shipped as `rules.json`: no sounds, lighting disabled, empty actions) and a zip of `.agents/skills`. Both builds are windowed (no console) and keep data in the user's app data folder (see Packaged app above).
+`.github/workflows/build.yml` (manual) builds Windows (`.exe`) and macOS (`.app` for Apple Silicon and Intel, zipped with `ditto` so the bundle's symlinks and signature survive) from the current code as workflow artifacts. **Temporary:** the two macOS jobs are commented out in `build.yml` (Apple outage), so builds and releases are Windows-only until they are restored after v0.1.2; delete this note then. `release.yml` (manual, takes a tag) reuses it and publishes a GitHub release with the binaries plus `rules.example.json` (shipped as `rules.json`: no sounds, lighting disabled, empty actions) and a zip of `.agents/skills`. Both builds are windowed (no console) and keep data in the user's app data folder (see Packaged app above).
