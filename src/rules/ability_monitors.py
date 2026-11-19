@@ -3,22 +3,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 from src.state.abilities import Abilities, Ability, ChargeAbility
-from src.rules.monitor_base import StateSnapshot, TargetedStatefulMonitor
-from src.rules.monitor_config import MonitorConfig, MonitorType
+from src.rules.monitor_base import StateSnapshot, TargetedMonitorConfig, TargetedStatefulMonitor
+from src.rules.monitor_config import MonitorType
 
 if TYPE_CHECKING:
     from src.rules.bus import EventBus
     from src.rules.config import Rule
 
 
-class AbilityMonitorConfig(MonitorConfig):
+class AbilityMonitorConfig(TargetedMonitorConfig):
+    """Ability events. Abilities with their own class for an event (Charge of Darkness) set `for_target` on it."""
     type: Literal[MonitorType.ABILITY]
     target: str  # internal ability name, e.g. "spectre_spectral_dagger"
     event: Literal["COOLDOWN_STARTED"]
-
-    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
-        registry = ABILITY_SPECIFIC_REGISTRIES.get(self.target, ABILITY_MONITOR_REGISTRY)
-        return registry[self.event](rule, bus)
 
 
 class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
@@ -28,6 +25,8 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
     the game reports it unreliably. Picking an ability that actually has a
     cooldown is the rule author's responsibility.
     """
+    for_type = MonitorType.ABILITY
+    for_event = "COOLDOWN_STARTED"
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         super().__init__(rule, bus)
@@ -132,12 +131,6 @@ class AbilityCooldownStartedMonitor(TargetedStatefulMonitor):
         self._prev_names = frozenset()
 
 
-# Registry: event name → monitor class
-ABILITY_MONITOR_REGISTRY: dict[str, type[TargetedStatefulMonitor]] = {
-    "COOLDOWN_STARTED": AbilityCooldownStartedMonitor,
-}
-
-
 class ChargeOfDarknessCooldownStartedMonitor(AbilityCooldownStartedMonitor):
     """Spirit Breaker's Charge of Darkness: fire once, when it is cast.
 
@@ -150,12 +143,7 @@ class ChargeOfDarknessCooldownStartedMonitor(AbilityCooldownStartedMonitor):
     counts as a cast. (On a short charge the second start gives the same number
     as the first, so it never looked like a jump in the first place.)
     """
+    for_target = "spirit_breaker_charge_of_darkness"
 
     def _is_cast(self, prev_cooldown: int, cooldown: int) -> bool:
         return prev_cooldown == 0 and cooldown > 0
-
-
-# Abilities not listed here fall back to ABILITY_MONITOR_REGISTRY. Keyed by target.
-ABILITY_SPECIFIC_REGISTRIES: dict[str, dict[str, type[TargetedStatefulMonitor]]] = {
-    "spirit_breaker_charge_of_darkness": {"COOLDOWN_STARTED": ChargeOfDarknessCooldownStartedMonitor},
-}

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from src.rules.monitor_config import MonitorType
+from src.rules.monitor_config import MonitorConfig, MonitorType
 
 if TYPE_CHECKING:
     from src.rules.bus import EventBus
@@ -98,9 +98,83 @@ class StatefulMonitor(Monitor):
 class TargetedStatefulMonitor(StatefulMonitor):
     """A stateful monitor that watches one named target (an item or ability name).
 
-    The target comes from the rule's monitor config (`target`).
+    The target comes from the rule's monitor config (`target`). Its configs have several
+    events, so every subclass says which one it handles, and the config finds it with
+    `monitor_class`:
+
+        class CooldownReadyMonitor(TargetedStatefulMonitor):
+            for_type = MonitorType.ITEM
+            for_event = "COOLDOWN_READY"
+
+    `for_target` limits a class to one item or ability name (others fall back to the class
+    without one). The fields are inherited, so a specialised subclass sets only what differs
+    (Blink: `for_target = "item_blink"`); a subclass that changes none just shares code.
     """
 
+    # Every subclass must set for_type and for_event (checked in __init__)
+    for_type: ClassVar[MonitorType | None] = None
+    for_event: ClassVar[str | None] = None
+    for_target: ClassVar[str | None] = None
+
     def __init__(self, rule: Rule, bus: EventBus) -> None:
+        assert self.for_type is not None, f"{type(self).__name__} must set for_type"
+        assert self.for_event is not None, f"{type(self).__name__} must set for_event"
         super().__init__(rule, bus)
         self._target: str = rule.monitor.target
+
+    @classmethod
+    def declared_for(cls) -> tuple[MonitorType, str, str | None]:
+        """(for_type, for_event, for_target): the event and target this class handles."""
+        # Every subclass today is a monitor for its own event; none exists only to share code.
+        # These asserts catch a forgotten for_type / for_event, and a subclass that changes none
+        # of the fields (it would claim its parent's event). If an intermediate base or a
+        # code-sharing subclass is ever needed, remove them and skip such classes in monitor_class.
+        assert cls.for_type is not None, f"{cls.__name__} must set for_type"
+        assert cls.for_event is not None, f"{cls.__name__} must set for_event"
+        key = (cls.for_type, cls.for_event, cls.for_target)
+        for base in cls.__bases__:
+            if issubclass(base, TargetedStatefulMonitor):
+                assert (base.for_type, base.for_event, base.for_target) != key, (
+                    f"{cls.__name__} sets the same for_type, for_event and for_target as {base.__name__}"
+                )
+        return key
+
+
+def _subclasses(cls: type[TargetedStatefulMonitor]) -> set[type[TargetedStatefulMonitor]]:
+    found: set[type[TargetedStatefulMonitor]] = set()
+    for sub in cls.__subclasses__():
+        found.add(sub)
+        found |= _subclasses(sub)
+    return found
+
+
+def monitor_class(
+    monitor_type: MonitorType, event: str, target: str | None = None
+) -> type[TargetedStatefulMonitor]:
+    """The monitor class declared for this event and target, else the one for the event alone."""
+    by_key: dict[tuple[MonitorType, str, str | None], type[TargetedStatefulMonitor]] = {}
+    for cls in _subclasses(TargetedStatefulMonitor):
+        key = cls.declared_for()
+        assert key not in by_key, f"{cls.__name__} and {by_key[key].__name__} both declare {key}"
+        by_key[key] = cls
+    found = by_key.get((monitor_type, event, target)) or by_key.get((monitor_type, event, None))
+    # Config validation only lets through events listed in the config's Literal
+    assert found is not None, f"no monitor class declared for {monitor_type} {event}"
+    return found
+
+
+class TargetedMonitorConfig(MonitorConfig):
+    """Config for a type whose events each have their own TargetedStatefulMonitor subclass.
+
+    `_create` builds the class declared for this config's type, event and target. A config
+    with a fixed target (Midas, Blink) overrides `target` with a default that is not saved.
+    """
+    target: str
+    event: str
+
+    # Look up the classes declared for this type instead of the config's own (Blink rules use
+    # the item classes); None means the config's `type`.
+    uses_classes_of: ClassVar[MonitorType | None] = None
+
+    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
+        return monitor_class(self.uses_classes_of or self.type, self.event, self.target)(rule, bus)

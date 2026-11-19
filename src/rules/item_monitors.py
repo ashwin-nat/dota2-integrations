@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Literal
 
-from src.rules.monitor_base import StateSnapshot, TargetedStatefulMonitor
-from src.rules.monitor_config import MonitorConfig, MonitorType
+from pydantic import Field
+
+from src.rules.monitor_base import StateSnapshot, TargetedMonitorConfig, TargetedStatefulMonitor
+from src.rules.monitor_config import MonitorType
 from src.state.items import BaseItem, NoChargeItem, SingleChargeItem, MultiChargeItem
 
 if TYPE_CHECKING:
@@ -14,44 +16,31 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ItemMonitorConfig(MonitorConfig):
+class ItemMonitorConfig(TargetedMonitorConfig):
+    """Item events. Items with their own class for an event (Blink, BKB) set `for_target` on it."""
     type: Literal[MonitorType.ITEM]
-    target: str
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
 
-    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
-        registry = ITEM_SPECIFIC_REGISTRIES.get(self.target, ITEM_MONITOR_REGISTRY)
-        return registry[self.event](rule, bus)
 
-
-class MidasMonitorConfig(MonitorConfig):
+class MidasMonitorConfig(TargetedMonitorConfig):
     """Monitor for Hand of Midas charge-specific events."""
     type: Literal[MonitorType.MIDAS]
+    target: Literal["item_hand_of_midas"] = Field("item_hand_of_midas", exclude=True)
     event: Literal["CHARGED", "OVERCHARGED"]
 
-    @property
-    def target(self) -> str:
-        return "item_hand_of_midas"
 
-    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
-        return MIDAS_MONITOR_REGISTRY[self.event](rule, bus)
-
-
-class BlinkMonitorConfig(MonitorConfig):
-    """Monitor for Blink Dagger item events."""
+class BlinkMonitorConfig(TargetedMonitorConfig):
+    """Monitor for Blink Dagger item events: an `item` rule on item_blink, with its own editor entry."""
     type: Literal[MonitorType.BLINK]
+    target: Literal["item_blink"] = Field("item_blink", exclude=True)
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
-
-    @property
-    def target(self) -> str:
-        return "item_blink"
-
-    def _create(self, bus: EventBus, rule: Rule) -> TargetedStatefulMonitor:
-        return BLINK_MONITOR_REGISTRY[self.event](rule, bus)
+    uses_classes_of = MonitorType.ITEM
 
 
 class CooldownReadyMonitor(TargetedStatefulMonitor):
     """Active while the target item is off cooldown, from the > 0 to 0 transition."""
+    for_type = MonitorType.ITEM
+    for_event = "COOLDOWN_READY"
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         super().__init__(rule, bus)
@@ -80,6 +69,8 @@ class CooldownReadyMonitor(TargetedStatefulMonitor):
 
 class CooldownStartedMonitor(TargetedStatefulMonitor):
     """Active while the target item is on cooldown, from the 0 to > 0 transition."""
+    for_type = MonitorType.ITEM
+    for_event = "COOLDOWN_STARTED"
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         super().__init__(rule, bus)
@@ -115,6 +106,8 @@ class CooldownStartedMonitor(TargetedStatefulMonitor):
 
 class ItemAcquiredMonitor(TargetedStatefulMonitor):
     """Active while the target item is anywhere in the inventory."""
+    for_type = MonitorType.ITEM
+    for_event = "ITEM_ACQUIRED"
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         super().__init__(rule, bus)
@@ -139,6 +132,8 @@ class ItemAcquiredMonitor(TargetedStatefulMonitor):
 
 class ItemLostMonitor(TargetedStatefulMonitor):
     """Active from when the target item disappears from the inventory until it returns."""
+    for_type = MonitorType.ITEM
+    for_event = "ITEM_LOST"
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         super().__init__(rule, bus)
@@ -165,6 +160,8 @@ class MidasChargedMonitor(TargetedStatefulMonitor):
 
     Assumes charges never jump 2 -> 0 (would be a game bug).
     """
+    for_type = MonitorType.MIDAS
+    for_event = "CHARGED"
 
     def evaluate(self, snap: StateSnapshot) -> None:
         items = snap.items
@@ -180,6 +177,8 @@ class MidasChargedMonitor(TargetedStatefulMonitor):
 
 class MidasOverchargedMonitor(TargetedStatefulMonitor):
     """Active while Midas has 2 charges."""
+    for_type = MonitorType.MIDAS
+    for_event = "OVERCHARGED"
 
     def evaluate(self, snap: StateSnapshot) -> None:
         items = snap.items
@@ -193,35 +192,15 @@ class MidasOverchargedMonitor(TargetedStatefulMonitor):
             self._end()
 
 
-# Registry: event name → monitor class
-ITEM_MONITOR_REGISTRY: dict[str, type[TargetedStatefulMonitor]] = {
-    "COOLDOWN_READY": CooldownReadyMonitor,
-    "COOLDOWN_STARTED": CooldownStartedMonitor,
-    "ITEM_ACQUIRED": ItemAcquiredMonitor,
-    "ITEM_LOST": ItemLostMonitor,
-}
-
-MIDAS_MONITOR_REGISTRY: dict[str, type[TargetedStatefulMonitor]] = {
-    "CHARGED": MidasChargedMonitor,
-    "OVERCHARGED": MidasOverchargedMonitor,
-}
-
-
 class BlinkCooldownStartedMonitor(CooldownStartedMonitor):
-    """Fires when Blink Dagger is used (cooldown 0 → >0), ignoring cancel-penalty cooldowns (max_cooldown==4)."""
+    """Fires when Blink Dagger is used (cooldown 0 â†’ >0), ignoring cancel-penalty cooldowns (max_cooldown==4)."""
+    for_target = "item_blink"
 
     def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:
         # When the player gets hit, blink gets cancelled for 3 sec (game for whatever reason reprots it as 4)
         cancelled = curr.max_cooldown == 4
         return not cancelled and self._prev_cooldown == 0 and cooldown > 0
 
-
-BLINK_MONITOR_REGISTRY: dict[str, type[TargetedStatefulMonitor]] = {
-    "COOLDOWN_READY": CooldownReadyMonitor,
-    "COOLDOWN_STARTED": BlinkCooldownStartedMonitor,
-    "ITEM_ACQUIRED": ItemAcquiredMonitor,
-    "ITEM_LOST": ItemLostMonitor,
-}
 
 # GSI does not report the BKB buff, so approximate it as the first N seconds of the cooldown.
 BKB_BUFF_SECONDS = 10
@@ -234,6 +213,7 @@ class BkbCooldownStartedMonitor(CooldownStartedMonitor):
     The buff window is measured on the item's own cooldown (which counts down in game
     time, so pausing is respected) and ends early if the item is lost.
     """
+    for_target = "item_black_king_bar"
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         super().__init__(rule, bus)
@@ -267,21 +247,6 @@ class BkbCooldownStartedMonitor(CooldownStartedMonitor):
     def clear(self) -> None:
         super().clear()
         self._start_cooldown = 0
-
-
-BKB_MONITOR_REGISTRY: dict[str, type[TargetedStatefulMonitor]] = {
-    "COOLDOWN_READY": CooldownReadyMonitor,
-    "COOLDOWN_STARTED": BkbCooldownStartedMonitor,
-    "ITEM_ACQUIRED": ItemAcquiredMonitor,
-    "ITEM_LOST": ItemLostMonitor,
-}
-
-# Maps item names that have a dedicated registry to that registry.
-# Items not listed here fall back to ITEM_MONITOR_REGISTRY.
-ITEM_SPECIFIC_REGISTRIES: dict[str, dict[str, type[TargetedStatefulMonitor]]] = {
-    "item_blink": BLINK_MONITOR_REGISTRY,
-    "item_black_king_bar": BKB_MONITOR_REGISTRY,
-}
 
 
 def _get_cooldown(item: BaseItem | None) -> int | None:
