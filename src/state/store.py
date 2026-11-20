@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class GameState:
     def __init__(self, compiled_rules: CompiledRules, bus: EventBus, light_arbiter: LightingArbiter):
+        self._last_ignored_state: str | None = None  # log a skipped game state once, not per frame
         self._version: int = 0
         self.raw: dict | None = None  # latest payload as received, for the /state debug endpoint
         self.items: Items | None = None
@@ -66,8 +67,11 @@ class GameState:
             self._update_before_horn(map)
             return
         if game_state != "DOTA_GAMERULES_STATE_GAME_IN_PROGRESS":
-            logger.info(f"Ignoring update: game state is {game_state}")
+            if game_state != self._last_ignored_state:
+                logger.info(f"Ignoring updates: game state is {game_state}")
+                self._last_ignored_state = game_state
             return
+        self._last_ignored_state = None
 
         self.items = parse_items(items) if items else None
         self.abilities = parse_abilities(abilities) if abilities else None
