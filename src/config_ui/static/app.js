@@ -131,8 +131,7 @@ async function loadAll() {
   const [config, media, board, info] = await Promise.all([api("/api/config"), api("/api/media"), api("/api/soundboard"), api("/api/info")]);
   S.dataDir = info.data_dir;
   $("#power").hidden = !info.can_shutdown;
-  $("#save-recording").hidden = !info.recording;
-  $("#clear-recording").hidden = !info.recording;
+  $("#recording-menu").hidden = !info.recording;
   S.config = config;
   S.media = media;
   S.clips = board.clips;

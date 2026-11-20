@@ -163,6 +163,11 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
 .btn-delete:hover { background: var(--red); border-color: var(--red-hi); color: #fff; }
 .ico { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
 .rec-dot { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 50%; background: var(--red-hi); box-shadow: 0 0 6px var(--red-hi); }
+.rec-menu { position: relative; }
+.rec-menu[hidden] { display: none; }
+.rec-pop { display: none; position: absolute; top: 100%; right: 0; z-index: 50; padding-top: 4px; }
+.rec-pop > .btn { display: block; width: 100%; white-space: nowrap; margin-bottom: 4px; background: var(--panel-2); }
+.rec-menu:hover .rec-pop, .rec-menu:focus-within .rec-pop { display: block; }
 .modal.recording-saved { width: min(460px, 100%); }
 .recording-name { padding: 14px 18px; }
 .recording-name .field { display: flex; align-items: center; gap: 6px; }
