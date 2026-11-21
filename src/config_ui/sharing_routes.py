@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import string
-import sys
 from pathlib import Path
 from typing import Callable
 
 from aiohttp import web
 
-from src import drive, packs, sharing, shortcuts
+from src import drive, osutil, packs, sharing, shortcuts
 from src.media import media_dir
 from src.rules.config import RulesConfig
 
@@ -17,31 +14,7 @@ from src.rules.config import RulesConfig
 def _cloud_folders() -> list[dict]:
     """Likely sync folders on this computer, so nobody has to type a path."""
     home = Path.home()
-    found: list[tuple[str, Path]] = []
-    if sys.platform == "darwin":
-        cloud = home / "Library" / "CloudStorage"
-        if cloud.is_dir():
-            for d in sorted(cloud.iterdir()):
-                if d.name.startswith("GoogleDrive-"):
-                    account = d.name.removeprefix("GoogleDrive-")
-                    for sub in ("My Drive", "Shared drives"):
-                        if (d / sub).is_dir():
-                            found.append((f"Google Drive · {sub} ({account})", d / sub))
-                elif d.name.startswith("OneDrive"):
-                    found.append(("OneDrive", d))
-                elif d.name.startswith("Dropbox"):
-                    found.append(("Dropbox", d))
-        icloud = home / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
-        if icloud.is_dir():
-            found.append(("iCloud Drive", icloud))
-    elif sys.platform == "win32":
-        for letter in string.ascii_uppercase:
-            for sub in ("My Drive", "Shared drives"):
-                p = Path(f"{letter}:\\") / sub
-                if p.is_dir():
-                    found.append((f"Google Drive · {sub} ({letter}:)", p))
-        if os.environ.get("OneDrive"):
-            found.append(("OneDrive", Path(os.environ["OneDrive"])))
+    found = osutil.cloud_folders()
     for label, p in (("Dropbox", home / "Dropbox"), ("Google Drive", home / "Google Drive")):
         if p.is_dir() and all(p != f for _, f in found):
             found.append((label, p))

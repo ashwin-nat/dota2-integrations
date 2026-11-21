@@ -17,14 +17,13 @@ import logging
 import os
 import re
 import shutil
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src import shortcuts
+from src import osutil, shortcuts
 from src.media import LOCAL_MEDIA_DIR, media_dir, media_ref, set_media_dir, unique_path
 from src.rules.config import ActionType, RulesConfig, sound_refs
 
@@ -296,7 +295,7 @@ def publish() -> None:
         "name": _settings.name,
         "device": _settings.device,
         "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "platform": sys.platform,
+        "platform": osutil.platform_name(),
         "rules": [r for r in rules if r["actions"]],
         "soundboard": clips,
     }

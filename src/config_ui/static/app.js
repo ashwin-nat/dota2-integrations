@@ -393,6 +393,11 @@ async function clearRecording() {
   toast(`Cleared ${plural(count, "update")}`, "ok");
 }
 
+async function openRecordingsFolder() {
+  const res = await fetch("/api/recordings/open", { method: "POST" }).catch((e) => ({ ok: false, text: async () => e.message }));
+  if (!res.ok) toast((await res.text()).trim(), "err");
+}
+
 function showChanges() {
   if (!S.config || !isDirty()) return;
   const close = () => { backdrop.remove(); document.removeEventListener("keydown", onKey); };
@@ -535,6 +540,7 @@ $("#status").addEventListener("click", (e) => { if (e.currentTarget.classList.co
 $("#power").addEventListener("click", powerOff);
 $("#save-recording").addEventListener("click", openSaveRecording);
 $("#clear-recording").addEventListener("click", clearRecording);
+$("#open-recordings").addEventListener("click", openRecordingsFolder);
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); if (isDirty()) save(); }
 });

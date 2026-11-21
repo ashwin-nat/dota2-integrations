@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 RULES_PATH = Path("rules.json")
 
-from src import dota_setup, packs, sharing, translate, tray
+from src import dota_setup, osutil, packs, sharing, translate, tray
 from src.config_ui import setup_config_ui
 from src.ingress.http_server import BASE_URL, PORT, PortInUse, serve
 from src.lighting import load_lighting_controller
@@ -239,14 +239,11 @@ def _enter_app_dir() -> None:
     """
     if not getattr(sys, "frozen", False):
         return
-    if sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    elif sys.platform == "win32":
-        if (Path(sys.executable).parent / "rules.json").exists():
-            os.chdir(Path(sys.executable).parent)
-            return
-        base = Path(os.environ.get("APPDATA") or Path.home())
-    else:
+    if osutil.IS_WINDOWS and (Path(sys.executable).parent / "rules.json").exists():
+        os.chdir(Path(sys.executable).parent)
+        return
+    base = osutil.app_data_base()
+    if base is None:
         return
     app_dir = base / APP_DIR_NAME
     old_dir = base / OLD_APP_DIR_NAME

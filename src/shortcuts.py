@@ -7,8 +7,9 @@ for Desktop shows a folder shortcut there; if it is an alias, resolve it here (e
 from __future__ import annotations
 
 import struct
-import sys
 from pathlib import Path
+
+from src import osutil
 
 _HAS_TARGET_ID_LIST = 0x01
 _HAS_LINK_INFO = 0x02
@@ -44,7 +45,7 @@ def read_lnk(path: Path) -> Path | None:
 
 
 def _astr(data: bytes, off: int) -> str:
-    return data[off:data.index(b"\0", off)].decode("mbcs" if sys.platform == "win32" else "latin-1")
+    return data[off:data.index(b"\0", off)].decode(osutil.ansi_codec())
 
 
 def _wstr(data: bytes, off: int) -> str:

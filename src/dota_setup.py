@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 import re
-import sys
 from pathlib import Path
+
+from src import osutil
 
 logger = logging.getLogger(__name__)
 
@@ -40,23 +41,6 @@ CFG_TEMPLATE = """"soundbo"
 """
 
 
-def _steam_roots() -> list[Path]:
-    home = Path.home()
-    if sys.platform == "darwin":
-        return [home / "Library" / "Application Support" / "Steam"]
-    if sys.platform == "win32":
-        roots = []
-        try:
-            import winreg
-
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
-                roots.append(Path(winreg.QueryValueEx(key, "SteamPath")[0]))
-        except OSError:
-            pass
-        return roots + [Path(r"C:\Program Files (x86)\Steam"), Path(r"C:\Program Files\Steam")]
-    return [home / ".steam" / "steam", home / ".local" / "share" / "Steam"]
-
-
 def _libraries(root: Path) -> list[Path]:
     libs = [root]
     try:
@@ -70,7 +54,7 @@ def _libraries(root: Path) -> list[Path]:
 def dota_cfg_dirs() -> list[Path]:
     seen: set[Path] = set()
     out = []
-    for root in _steam_roots():
+    for root in osutil.steam_roots():
         for lib in _libraries(root):
             cfg = lib / DOTA_CFG
             key = cfg.resolve() if cfg.exists() else cfg

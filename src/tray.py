@@ -7,8 +7,9 @@ asyncio app runs in a background thread while this runs the platform's event loo
 from __future__ import annotations
 
 import logging
-import sys
 from typing import Callable
+
+from src import osutil
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def make_icon(open_editor: Callable[[], None], quit_app: Callable[[], None]):
     except Exception as e:
         logger.warning(f"No tray icon: {e}")
         return None
-    if sys.platform == "darwin":
+    if osutil.IS_MACOS:
         try:
             _reopen_from_dock(open_editor)
         except Exception as e:

@@ -7,16 +7,12 @@ attribute, which is how we find a folder you own and build an invite link for it
 """
 from __future__ import annotations
 
-import ctypes
-import ctypes.util
-import os
 import re
-import string
-import sys
 from pathlib import Path
 
+from src import osutil
+
 SHORTCUTS_DIR = ".shortcut-targets-by-id"
-ITEM_ID_ATTR = b"com.google.drivefs.item-id#S"
 DOWNLOAD_URL = "https://www.google.com/drive/download/"
 
 _ID = r"[\w-]{20,}"
@@ -36,25 +32,12 @@ def folder_link(folder_id: str) -> str:
 
 def drive_roots() -> list[Path]:
     """Each signed-in Google Drive for desktop account on this computer."""
-    if sys.platform == "darwin":
-        cloud = Path.home() / "Library" / "CloudStorage"
-        return sorted(d for d in cloud.glob("GoogleDrive-*") if d.is_dir()) if cloud.is_dir() else []
-    if sys.platform == "win32":
-        roots = [Path(f"{letter}:\\") for letter in string.ascii_uppercase]
-        return [r for r in roots if (r / "My Drive").is_dir()]
-    return []
-
-
-_libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True) if sys.platform == "darwin" else None
+    return osutil.google_drive_roots()
 
 
 def item_id(path: Path) -> str | None:
     """The Drive id of a synced file or folder (macOS only)."""
-    if _libc is None:
-        return None
-    buf = ctypes.create_string_buffer(256)
-    n = _libc.getxattr(os.fsencode(path), ITEM_ID_ATTR, buf, len(buf), 0, 0)
-    return buf.raw[:n].decode() if n > 0 else None
+    return osutil.google_drive_item_id(path)
 
 
 def folder_id_of(path: Path) -> str | None:
@@ -85,7 +68,7 @@ def find_folder(folder_id: str) -> Path | None:
             if len(inside) == 1:
                 return inside[0]
         # Your own folder: look two levels into My Drive
-        if _libc is not None:
+        if osutil.CAN_READ_DRIVE_ITEM_IDS:
             top = _subdirs(root / "My Drive")
             for d in top + [s for t in top for s in _subdirs(t)]:
                 if item_id(d) == folder_id:

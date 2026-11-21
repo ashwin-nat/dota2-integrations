@@ -9,10 +9,11 @@ from typing import Callable
 from aiohttp import web
 from pydantic import ValidationError
 
-from src import sharing
+from src import osutil, sharing
 from src.config_ui.catalog import load_catalog
 from src.config_ui.sharing_routes import setup_sharing
 from src.config_ui.files import AUDIO_EXTENSIONS, safe_filename
+from src.recorder import RECORDINGS_DIR
 from src.media import media_dir, media_ref, resolve, unique_path
 from src.config_ui.soundboard import setup_soundboard
 from src.rules.config import RulesConfig
@@ -135,6 +136,17 @@ def setup_config_ui(
     @routes.get("/api/info")
     async def info(_: web.Request) -> web.Response:
         return web.json_response({"data_dir": str(Path.cwd()), "can_shutdown": shutdown is not None, "recording": recording})
+
+    @routes.post("/api/recordings/open")
+    async def open_recordings(_: web.Request) -> web.Response:
+        folder = RECORDINGS_DIR.resolve()
+        folder.mkdir(parents=True, exist_ok=True)
+        try:
+            osutil.open_dir(folder)
+        except Exception as e:
+            logger.warning(f"Could not open {folder}: {e}")
+            return web.json_response({"ok": False, "error": f"Can't open {folder} ({e})"}, status=500)
+        return web.json_response({"ok": True})
 
     @routes.post("/api/shutdown")
     async def power_off(_: web.Request) -> web.Response:
