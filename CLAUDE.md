@@ -152,6 +152,9 @@ In the editor, periodic and once rules are "Reminders" under Game events; a "Rep
 | `play_sound`   | `clips: [{file, probability, volume}]` | Integer probabilities must sum to 100; one clip is picked by weight (a plain sound is one clip at 100) |
 | `light`        | `r`, `g`, `b` (0–255)  |                                            |
 | `reset_light`  | _(none)_                | Restores day/night colour from `map_colours`; forbidden on map monitors |
+| `webhook`      | `endpoints: [{url, api_key, auth_type, timeout, cooldown}]` | Every endpoint is called when the rule fires; cooldown is per endpoint. |
+
+A rule holds at most one action of each type (`Rule.one_action_per_type`): several sounds are `clips` (variants) of one `play_sound`, several webhooks are `endpoints` of one `webhook`. Separate rules on the same trigger are still allowed.
 
 ### `rules.json` format
 

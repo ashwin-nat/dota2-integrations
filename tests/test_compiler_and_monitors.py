@@ -23,7 +23,7 @@ def _light(priority, enabled=True):
 
 
 def _webhook(enabled=True):
-    return {"type": "webhook", "url": "http://localhost/x", "enabled": enabled}
+    return {"type": "webhook", "endpoints": [{"url": "http://localhost/x"}], "enabled": enabled}
 
 
 def _setup(rules):

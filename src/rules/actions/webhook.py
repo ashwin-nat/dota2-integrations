@@ -11,7 +11,7 @@ import aiohttp
 
 from src.rules.actions.base import ActionBinding, ActionExecutor, describe
 from src.rules.bus import Event, EventType
-from src.rules.config import ActionType, WebhookAction
+from src.rules.config import ActionType, WebhookAction, WebhookEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +49,18 @@ class WebhookExecutor(ActionExecutor[WebhookAction]):
                 self._queue.task_done()
 
     def _fire(self, binding: ActionBinding[WebhookAction], event: Event) -> None:
-        action = binding.action
-        key = id(action)
         now = time.monotonic()
-        if action.cooldown > 0 and now - self._last_fired.get(key, 0.0) < action.cooldown:
-            return
-        self._last_fired[key] = now
-        task = asyncio.create_task(_post_webhook(binding, event))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        for endpoint in binding.action.endpoints:
+            key = id(endpoint)
+            if endpoint.cooldown > 0 and now - self._last_fired.get(key, 0.0) < endpoint.cooldown:
+                continue
+            self._last_fired[key] = now
+            task = asyncio.create_task(_post_webhook(binding, endpoint, event))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
 
-def _build_url(action: WebhookAction) -> str:
+def _build_url(action: WebhookEndpoint) -> str:
     if action.auth_type != "query" or action.api_key is None:
         return action.url
     parsed = urlparse(action.url)
@@ -70,7 +70,7 @@ def _build_url(action: WebhookAction) -> str:
     return urlunparse(parsed._replace(query=new_query))
 
 
-def _build_headers(action: WebhookAction) -> dict[str, str]:
+def _build_headers(action: WebhookEndpoint) -> dict[str, str]:
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if action.api_key is None or action.auth_type is None:
         return headers
@@ -81,8 +81,7 @@ def _build_headers(action: WebhookAction) -> dict[str, str]:
     return headers
 
 
-async def _post_webhook(binding: ActionBinding[WebhookAction], event: Event) -> None:
-    action = binding.action
+async def _post_webhook(binding: ActionBinding[WebhookAction], action: WebhookEndpoint, event: Event) -> None:
     url = _build_url(action)
     payload = {
         "version": 1,

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.rules.config import RulesConfig, drop_sound
+from src.rules.config import Rule, RulesConfig, drop_sound
 
 
 def _rule(rule_id, event="COOLDOWN_READY", target="item_bkb"):
@@ -63,3 +63,33 @@ def test_drop_sound_gives_its_odds_to_the_first_remaining_clip():
 def test_drop_sound_reports_when_no_clips_remain():
     action = {"type": "play_sound", "clips": [{"file": "a.mp3", "probability": 100}]}
     assert drop_sound(action, "a.mp3") is False
+
+
+def _with_actions(*actions):
+    return {"rules": [{"id": "r", "monitor": {"type": "hero", "event": "HERO_KILLED"}, "actions": list(actions)}]}
+
+
+def _hook(url="http://localhost/x"):
+    return {"type": "webhook", "endpoints": [{"url": url}]}
+
+
+def test_two_actions_of_one_type_rejected():
+    clip = {"type": "play_sound", "clips": [{"file": "x.mp3", "probability": 100}]}
+    with pytest.raises(ValidationError, match="more than one play_sound"):
+        Rule.model_validate(_with_actions(clip, clip)["rules"][0])
+    with pytest.raises(ValidationError, match="more than one webhook"):
+        Rule.model_validate(_with_actions(_hook(), _hook("http://localhost/y"))["rules"][0])
+
+
+def test_one_action_of_each_type_accepted():
+    light = {"type": "light", "r": 1, "g": 2, "b": 3, "priority": 1}
+    RulesConfig.model_validate(_with_actions(light, _hook()))
+
+
+def test_webhook_several_endpoints_validated_each():
+    ok = {"url": "http://localhost/a"}
+    RulesConfig.model_validate(_with_actions({"type": "webhook", "endpoints": [ok, {"url": "http://localhost/b"}]}))
+    with pytest.raises(ValidationError, match="auth_type"):
+        RulesConfig.model_validate(_with_actions({"type": "webhook", "endpoints": [ok, {"url": "http://h/b", "api_key": "k"}]}))
+    with pytest.raises(ValidationError):
+        RulesConfig.model_validate(_with_actions({"type": "webhook", "endpoints": []}))

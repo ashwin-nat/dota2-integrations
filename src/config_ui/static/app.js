@@ -595,7 +595,7 @@ function visibleRules() {
     if (S.ruleAction && S.ruleAction !== "missing" && !r.actions.some((a) => a.type === S.ruleAction)) return false;
     if (!q) return true;
     const d = describeTrigger(r.monitor);
-    const text = [r.id, d.title, d.sub, ...r.actions.flatMap((a) => (a.type === "play_sound" ? a.clips.map((c) => fileName(c.file)) : [a.url || ""]))];
+    const text = [r.id, d.title, d.sub, ...r.actions.flatMap((a) => (a.type === "play_sound" ? a.clips.map((c) => fileName(c.file)) : a.type === "webhook" ? a.endpoints.map((e) => e.url) : []))];
     return text.some((t) => t && t.toLowerCase().includes(q));
   });
   const title = (r) => describeTrigger(r.monitor).title.toLowerCase();
@@ -638,7 +638,7 @@ function ruleRow(r) {
     const off = a.enabled === false ? "off" : "";
     if (a.type === "play_sound") return soundChips(a);
     if (a.type === "light") return [h("span", { class: `chip ${off}` }, h("span", { class: "swatch", style: { background: hex(a) } }), a.priority ? `prio ${a.priority}` : "baseline")];
-    return [h("span", { class: `chip ${off}`, title: a.url }, "⇢ webhook")];
+    return [h("span", { class: `chip ${off}`, title: a.endpoints.map((e) => e.url).join("\n") }, a.endpoints.length > 1 ? `⇢ ${a.endpoints.length} webhooks` : "⇢ webhook")];
   });
   // A div, not a button: the sound chips hold their own preview buttons
   return h("div", {
@@ -1466,7 +1466,7 @@ const haveRule = (rule) => S.config.rules.some((r) => sameMonitor(r.monitor, rul
 // One of your rules already plays a different sound on this trigger
 const clashingRules = (rule) => S.config.rules.filter((r) => sameMonitor(r.monitor, rule.monitor) && hasSound(r) && soundFiles(r) !== soundFiles(rule));
 
-function copyFriendRules(friend, rules, { replace = false } = {}) {
+function copyFriendRules(friend, rules, { replace = false, merge = false } = {}) {
   // All or nothing: a rule whose sound isn't in your library could never play
   const missing = [...new Set(rules.flatMap((r) => soundClips(r).filter((c) => !hasMedia(c.file)).map((c) => fileName(c.file))))];
   if (missing.length) {
@@ -1482,6 +1482,16 @@ function copyFriendRules(friend, rules, { replace = false } = {}) {
       mine[0].actions.unshift(...copy.actions.filter((a) => a.type === "play_sound"));
       continue;
     }
+    if (merge) {
+      // Keep your sound and add theirs to it as variants (one action holds every sound of a trigger)
+      const mine = clashingRules(rule)[0].actions.find((a) => a.type === "play_sound" && a.enabled !== false);
+      for (const clip of soundClips(copy)) {
+        if (mine.clips.some((c) => c.file === clip.file)) continue;
+        addClipVariant(mine.clips);
+        Object.assign(mine.clips[mine.clips.length - 1], { file: clip.file, volume: clip.volume });
+      }
+      continue;
+    }
     // Prefixed with the friend's name so it never clashes with a rule of yours
     const base = `${friend.name}/${rule.id}`;
     let id = base;
@@ -1495,7 +1505,7 @@ function copyFriendRules(friend, rules, { replace = false } = {}) {
   markDirty();
   render();
   const what = rules.length === 1 ? describeTrigger(rules[0].monitor).title : `${rules.length} rules`;
-  toast(`${replace ? "Replaced your sound for" : "Copied"} ${what} from ${friend.name}. Press Save to keep ${rules.length === 1 ? "it" : "them"}.`, "ok");
+  toast(`${replace ? "Replaced your sound for" : merge ? "Added variants to" : "Copied"} ${what} from ${friend.name}. Press Save to keep ${rules.length === 1 ? "it" : "them"}.`, "ok");
 }
 
 function renderFriends() {
@@ -1723,7 +1733,7 @@ function renderFriend(f) {
       haveRule(r) ? h("span", { class: "have" }, "✓ In yours")
         : clash ? h("span", { class: "copy-choice" },
           h("button", { class: "btn btn-sm", disabled: broken, title: why || "Use their sound instead of yours (your lights stay)", onclick: () => copyFriendRules(f, [r], { replace: true }) }, icon("swap"), "Replace mine"),
-          h("button", { class: "btn btn-sm btn-ghost", disabled: broken, title: why || "Keep yours and add theirs; both play", onclick: () => copyFriendRules(f, [r]) }, icon("plus"), "Add both"))
+          h("button", { class: "btn btn-sm btn-ghost", disabled: broken, title: why || "Keep yours and add theirs as a variant; one is picked at random", onclick: () => copyFriendRules(f, [r], { merge: true }) }, icon("plus"), "Add as variant"))
         : h("button", { class: "btn btn-sm", disabled: broken, title: why, onclick: () => copyFriendRules(f, [r]) }, icon("copy"), "Copy"));
   };
   const diff = h("label", { class: "toggle", title: "Hide rules where you already have the same sound on the same trigger (volume is ignored)" },
@@ -1936,6 +1946,8 @@ function addClipVariant(clips) {
   clips.push({ file: pick.file, probability: share, volume: clips[clips.length - 1].volume });
 }
 
+const newEndpoint = () => ({ url: "https://", api_key: null, auth_type: null, timeout: 2, cooldown: 0 });
+
 // If the trigger already plays a sound, "Sound" adds a variant to that action instead of a second one
 const addSoundButton = (add, existing) => h("button", { class: "btn btn-sm", disabled: !S.media[0],
   title: existing ? "Add another sound to this one as a variant" : "Play a sound",
@@ -2003,6 +2015,7 @@ function renderEventBody(ev) {
   const actions = rules.flatMap((r) => r.actions.map((a) => ({ rule: r, action: a })));
   const changed = () => { markDirty(); render(); };
 
+  const existing = (type) => actions.map((x) => x.action).find((a) => a.type === type);
   const add = (action, mutate) => { if (mutate) mutate(); else (ev.rule || ensureRule(monitor)).actions.push(action); changed(); };
   const what = ev.rule ? "reminder" : rules.length > 1 ? `${rules.length} rules` : "rule";
   // Only rules change here and nothing is final until Save, so no confirm box
@@ -2020,9 +2033,11 @@ function renderEventBody(ev) {
     h("p", { class: "event-desc" }, ev.desc),
     actions.length ? actions.map(({ rule, action }) => renderAction(rule, action, monitor, changed)) : h("p", { class: "hint" }, "Nothing happens yet. Add a sound or a light:"),
     h("div", { class: "add-row" },
-      addSoundButton(add, actions.map((x) => x.action).find((a) => a.type === "play_sound")),
-      h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, icon("light"), "Light"),
-      h("button", { class: "btn btn-sm btn-ghost", onclick: () => add({ type: "webhook", enabled: true, url: "https://", api_key: null, auth_type: null, timeout: 2, cooldown: 0 }) }, icon("webhook"), "Webhook")),
+      addSoundButton(add, existing("play_sound")),
+      existing("light") ? null : h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, icon("light"), "Light"),
+      h("button", { class: "btn btn-sm btn-ghost", title: existing("webhook") ? "Add another endpoint to this webhook" : "Call a URL",
+        onclick: () => existing("webhook") ? add(null, () => existing("webhook").endpoints.push(newEndpoint())) : add({ type: "webhook", enabled: true, endpoints: [newEndpoint()] }) },
+      icon("webhook"), existing("webhook") ? "Webhook (endpoint)" : "Webhook")),
     rules.length ? h("button", { class: "btn btn-sm btn-delete", onclick: removeRules }, icon("trash"), `Delete ${what}`) : null,
   );
 }
@@ -2206,17 +2221,21 @@ function renderAction(rule, a, monitor, changed) {
     );
   }
 
-  // webhook
-  const field = (label, key, type = "text", parse = (v) => v || null) => h("div", { class: "field" }, h("span", { class: "lbl" }, label),
-    h("input", { type, value: a[key] ?? "", "aria-label": label, onchange: (e) => { a[key] = parse(e.target.value); changed(); } }));
+  // webhook: one card, one block per endpoint
+  const endpoints = a.endpoints;
+  const field = (e, label, key, type = "text", parse = (v) => v || null) => h("div", { class: "field" }, h("span", { class: "lbl" }, label),
+    h("input", { type, value: e[key] ?? "", "aria-label": label, onchange: (ev) => { e[key] = parse(ev.target.value); changed(); } }));
   return h("div", { class: cls },
-    h("div", { class: "action-head" }, h("span", { class: "kind" }, "⇢ Webhook"), enabled, del),
-    field("URL", "url", "url", (v) => v),
-    field("API key", "api_key", "password"),
-    h("div", { class: "field" }, h("span", { class: "lbl" }, "Auth"),
-      h("select", { "aria-label": "Auth type", onchange: (e) => { a.auth_type = e.target.value || null; changed(); } },
-        ["", "bearer", "header", "query"].map((v) => h("option", { value: v, selected: (a.auth_type || "") === v }, v || "none")))),
-    field("Cooldown", "cooldown", "number", (v) => +v || 0));
+    h("div", { class: "action-head" }, h("span", { class: "kind" }, endpoints.length > 1 ? `⇢ Webhook (${endpoints.length} endpoints)` : "⇢ Webhook"), enabled, del),
+    endpoints.map((e, i) => h("div", { class: "clip-row" },
+      field(e, "URL", "url", "url", (v) => v),
+      field(e, "API key", "api_key", "password"),
+      h("div", { class: "field" }, h("span", { class: "lbl" }, "Auth"),
+        h("select", { "aria-label": "Auth type", onchange: (ev) => { e.auth_type = ev.target.value || null; changed(); } },
+          ["", "bearer", "header", "query"].map((v) => h("option", { value: v, selected: (e.auth_type || "") === v }, v || "none")))),
+      field(e, "Cooldown", "cooldown", "number", (v) => +v || 0),
+      endpoints.length > 1 ? h("button", { class: "btn btn-sm btn-ghost btn-danger", title: "Remove this endpoint", "aria-label": "Remove endpoint",
+        onclick: () => { endpoints.splice(i, 1); changed(); } }, "✕") : null)));
 }
 
 loadAll().catch((e) => toast(`Couldn't load config: ${e.message}`, "err", 10000));

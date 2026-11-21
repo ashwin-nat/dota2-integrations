@@ -83,8 +83,7 @@ class LightAction(BaseAction):
     priority: int | None = Field(ge=1, default=None)
 
 
-class WebhookAction(BaseAction):
-    type: Literal[ActionType.WEBHOOK]
+class WebhookEndpoint(BaseModel):
     url: str
     api_key: str | None = None
     auth_type: Literal["bearer", "header", "query"] | None = None
@@ -100,10 +99,16 @@ class WebhookAction(BaseAction):
         return v
 
     @model_validator(mode="after")
-    def api_key_requires_auth_type(self) -> WebhookAction:
+    def api_key_requires_auth_type(self) -> WebhookEndpoint:
         if self.api_key is not None and self.auth_type is None:
             raise ValueError("auth_type must be provided when api_key is set")
         return self
+
+
+class WebhookAction(BaseAction):
+    """Calls every endpoint when the rule fires; several webhooks are several endpoints."""
+    type: Literal[ActionType.WEBHOOK]
+    endpoints: list[WebhookEndpoint] = Field(min_length=1)
 
 
 AnyAction = Annotated[
@@ -159,6 +164,17 @@ class Rule(BaseModel):
     id: str
     monitor: AnyMonitor
     actions: list[AnyAction]
+
+    # One action per type: several sounds are variants of one play_sound, several
+    # webhooks are endpoints of one webhook, so the editor has one card per kind.
+    @model_validator(mode="after")
+    def one_action_per_type(self) -> Rule:
+        seen: set[str] = set()
+        for action in self.actions:
+            if action.type in seen:
+                raise ValueError(f"Rule {self.id!r}: more than one {action.type} action (use variants or endpoints instead)")
+            seen.add(action.type)
+        return self
 
     # Checked here rather than on the action so the error can name the rule. Loading with
     # context {"allow_missing_sounds": True} skips it: the app still starts when a synced

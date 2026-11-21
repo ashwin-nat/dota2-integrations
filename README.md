@@ -49,7 +49,7 @@ The ⏻ button at the top right turns the app off: it stops the server and frees
 
 The **Friends & packs** tab shares sounds, soundboard clips and rules. Everyone keeps their own rules. For each friend or pack you can:
 
-- **Copy** a rule into yours. If you already have a sound for that trigger, you choose **Replace mine** (only the sound changes; your lights stay) or **Add both**.
+- **Copy** a rule into yours. If you already have a sound for that trigger, you choose **Replace mine** (only the sound changes; your lights stay) or **Add as variant** (their sound joins yours as a variant, and one is picked at random).
 - Turn on **Play their sounds too**. Their sounds then fill in triggers you don't have a sound for. Your own sound always wins, so two sounds never play at once.
 
 Lights, webhooks (they can hold API keys), logs and light passwords always stay on your computer.

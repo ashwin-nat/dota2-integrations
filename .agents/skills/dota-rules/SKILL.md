@@ -46,7 +46,7 @@ Every action has `enabled` (default `true`). Use it to switch an action off with
 3. **Pick the actions.** The field-by-field details are in `config.py`. Notes per action:
    - `play_sound`: `clips` is a list of `{file, probability, volume}`; one is picked at random by `probability` (ints that must sum to 100, so a single clip is `100`). Each `file` must exist on disk, relative to the project root; the app refuses to start otherwise. List `media/` and suggest existing files before inventing a path. `volume` is per clip (0-100) and is scaled by the global `sound.volume`.
    - `light`: see the priority rules below.
-   - `webhook`: `url` must be http(s). If you set `api_key`, also set `auth_type` (`bearer` / `header` / `query`). `cooldown` is in seconds and stops repeated calls.
+   - `webhook`: `endpoints` is a list of `{url, api_key, auth_type, timeout, cooldown}`; each `url` must be http(s). If you set `api_key`, also set `auth_type` (`bearer` / `header` / `query`). `cooldown` is in seconds, per endpoint, and stops repeated calls. A rule has at most one action of each type: use several `clips` for sound variants and several `endpoints` for multiple webhooks.
 4. **Pick an `id`**: snake_case, unique, describing the trigger (e.g. `blink_used`, `hero_killed`).
 
 ## Light priorities and how long a colour lasts
