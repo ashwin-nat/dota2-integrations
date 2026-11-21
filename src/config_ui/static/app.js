@@ -522,6 +522,7 @@ function renderTopbar() {
   renderStatus();
 }
 
+$("#add-sound").addEventListener("click", () => openClipEditor());
 $("#master-volume").addEventListener("input", (e) => {
   S.config.sound.volume = +e.target.value;
   $("#master-volume-out").value = `${e.target.value}%`;
