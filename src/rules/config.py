@@ -31,6 +31,20 @@ class ActionType(StrEnum):
 
 class SoundConfig(BaseModel):
     volume: int = Field(ge=0, le=100, default=100)
+    # Soundboard chattiness (see DropFilter): max drop probability, and the gap in seconds
+    # above which a sound is never dropped. Out-of-range values are clamped.
+    drop_ratio: float = 0.0
+    min_interval: float = 0.0
+
+    @field_validator("drop_ratio")
+    @classmethod
+    def _clamp_ratio(cls, v: float) -> float:
+        return min(1.0, max(0.0, v))
+
+    @field_validator("min_interval")
+    @classmethod
+    def _clamp_interval(cls, v: float) -> float:
+        return max(0.0, v)
 
 
 # --- Lighting config ---

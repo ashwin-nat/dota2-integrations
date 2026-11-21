@@ -101,6 +101,29 @@ button, input, select { font: inherit; color: inherit; }
 }
 .master-vol output { width: 34px; color: var(--text); font-variant-numeric: tabular-nums; }
 
+/* Soundboard chattiness popover */
+.chat-menu { position: relative; }
+.chat-label { color: var(--muted); font-family: "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .08em; }
+.chat-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 300px; padding: 8px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0,0,0,.55);
+}
+.chat-pop[hidden], .chat-custom[hidden] { display: none; }
+.chat-options { display: flex; flex-direction: column; gap: 4px; }
+.chat-option {
+  display: block; width: 100%; text-align: left; cursor: pointer; padding: 7px 10px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.chat-option:hover { border-color: var(--line-2); background: var(--panel-3); }
+.chat-option.active { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold-lo); }
+.chat-option b { display: block; color: var(--text); font-weight: 600; }
+.chat-option span { display: block; color: var(--muted); font-size: 12.5px; }
+.chat-custom { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.chat-custom label { display: grid; gap: 4px; color: var(--muted); font-size: 12.5px; }
+.chat-field { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.chat-field input { width: 90px; }
+
 input[type=range] {
   accent-color: var(--gold);
   width: 120px;

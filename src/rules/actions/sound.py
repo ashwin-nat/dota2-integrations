@@ -8,6 +8,7 @@ from typing import Any
 
 from src.media import resolve
 from src.rules.actions.base import ActionBinding, ActionExecutor, describe
+from src.rules.actions.drop_filter import DropFilter
 from src.rules.bus import Event, EventType
 from src.rules.config import ActionType, PlaySoundAction
 from src.sound import SoundManager
@@ -24,6 +25,14 @@ class SoundExecutor(ActionExecutor[PlaySoundAction]):
         super().__init__()
         self._sound = sound
         self._queue: asyncio.Queue[tuple[ActionBinding[PlaySoundAction], Event]] = asyncio.Queue()
+        self._filter_settings = (0.0, 0.0)
+        self._filter = DropFilter(*self._filter_settings)
+
+    def configure_filter(self, drop_ratio: float, min_interval: float) -> None:
+        """Set the soundboard chattiness. Learned state restarts only when the numbers change."""
+        if (drop_ratio, min_interval) != self._filter_settings:
+            self._filter_settings = (drop_ratio, min_interval)
+            self._filter = DropFilter(drop_ratio, min_interval)
 
     def on_event(self, event: Event) -> None:
         """Queue every sound bound to the event's key on STARTED; ENDED is ignored."""
@@ -34,7 +43,16 @@ class SoundExecutor(ActionExecutor[PlaySoundAction]):
 
     def workers(self) -> dict[str, Coroutine[Any, Any, None]]:
         """The queue-draining coroutine that plays the sounds."""
-        return {"action_sound": self._drain()}
+        return {"action_sound": self._drain(), "drop_filter_dump": self._dump_filter()}
+
+    DUMP_INTERVAL = 5  # seconds between drop filter state dumps
+
+    async def _dump_filter(self) -> None:
+        """Log the drop filter's state every DUMP_INTERVAL seconds while it is active."""
+        while True:
+            await asyncio.sleep(self.DUMP_INTERVAL)
+            if self._filter_settings[0] > 0 and self._filter_settings[1] > 0:
+                logger.info(f"Drop filter: {self._filter.dump()}")
 
     async def _drain(self) -> None:
         """Sounds queued together, BURST_LIMIT or more, are dropped.
@@ -53,6 +71,9 @@ class SoundExecutor(ActionExecutor[PlaySoundAction]):
                 )
                 continue
             for binding, event in batch:
+                if not self._filter.should_allow(binding.rule_id):
+                    logger.info(f"{describe(binding, event)} -> {binding.action.type} dropped (chattiness)")
+                    continue
                 logger.info(f"{describe(binding, event)} -> {binding.action.type}")
                 try:
                     await self._play(binding.action)

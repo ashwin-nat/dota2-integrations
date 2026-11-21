@@ -324,6 +324,9 @@ function describeChanges() {
   const add = (label, detail, monitor) => out.push({ label, detail, trigger: monitor && describeTrigger(monitor) });
 
   if (was.sound?.volume !== now.sound?.volume) add("Master volume", `${was.sound?.volume}% → ${now.sound?.volume}%`);
+  if (was.sound?.drop_ratio !== now.sound?.drop_ratio || was.sound?.min_interval !== now.sound?.min_interval) {
+    add("Soundboard chattiness", `${Math.round((was.sound?.drop_ratio ?? 0) * 100)}% / ${was.sound?.min_interval ?? 0} s → ${Math.round(now.sound.drop_ratio * 100)}% / ${now.sound.min_interval} s`);
+  }
   if (was.lighting?.enabled !== now.lighting?.enabled) add("Lighting", now.lighting.enabled ? "enabled" : "disabled");
   if (was.lighting?.vendor !== now.lighting?.vendor) add("Lighting vendor", `${was.lighting?.vendor} → ${now.lighting?.vendor}`);
   if (!same(was.map_colours, now.map_colours)) add("Day/night colours", "changed");
@@ -522,10 +525,91 @@ function renderTopbar() {
   const vol = $("#master-volume");
   vol.value = S.config.sound.volume;
   $("#master-volume-out").value = `${vol.value}%`;
+  S.chatCustom = false;
+  renderChattiness();
   $("#lighting-enabled").checked = S.config.lighting.enabled;
   $("#lighting-vendor").value = S.config.lighting.vendor;
   renderStatus();
 }
+
+// ---- Soundboard chattiness ----
+// The backend only knows two numbers (drop_ratio, min_interval); preset names live here.
+// The selected preset is worked out from the numbers, and Custom's values are remembered locally.
+
+const CHATTINESS_PRESETS = [
+  { name: "Unfiltered", ratio: 0, interval: 0, hint: "Every trigger plays." },
+  { name: "Lively", ratio: 0.25, interval: 15, hint: "Light thinning of the most frequent sounds only." },
+  { name: "Balanced", ratio: 0.5, interval: 30, hint: "Noticeable thinning in busy fights." },
+  { name: "Quiet", ratio: 0.8, interval: 60, hint: "Heavy thinning. Only sounds rarer than 60 s always play." },
+];
+const CUSTOM_KEY = "soundbo.chattiness.custom";
+
+const chatCustomValues = () => {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_KEY)) || null; } catch { return null; }
+};
+const saveChatCustomValues = (v) => { try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(v)); } catch { /* storage unavailable */ } };
+
+function chattinessChoice() {
+  const { drop_ratio = 0, min_interval = 0 } = S.config.sound;
+  const hit = CHATTINESS_PRESETS.find((p) => p.ratio === drop_ratio && p.interval === min_interval);
+  return hit && !S.chatCustom ? hit.name : "Custom";
+}
+
+function setChattiness(ratio, interval) {
+  S.config.sound.drop_ratio = ratio;
+  S.config.sound.min_interval = interval;
+  markDirty();
+  renderChattiness();
+}
+
+function renderChattiness() {
+  if (!S.config) return;
+  const current = chattinessChoice();
+  const wantCustom = current === "Custom";
+  $("#chattiness-name").textContent = current;
+  const opts = $("#chattiness-options");
+  opts.replaceChildren(
+    ...CHATTINESS_PRESETS.map((p) => h("button", {
+      type: "button", class: "chat-option" + (!wantCustom && current === p.name ? " active" : ""),
+      onclick: () => { S.chatCustom = false; setChattiness(p.ratio, p.interval); },
+    }, h("b", {}, p.name), h("span", {}, p.hint))),
+    h("button", {
+      type: "button", class: "chat-option" + (wantCustom ? " active" : ""),
+      onclick: () => {
+        S.chatCustom = true;
+        const v = chatCustomValues() || { ratio: S.config.sound.drop_ratio, interval: S.config.sound.min_interval };
+        setChattiness(v.ratio, v.interval);
+      },
+    }, h("b", {}, "Custom"), h("span", {}, "Set both numbers yourself.")),
+  );
+  $("#chattiness-custom").hidden = !wantCustom;
+  const ratio = $("#chat-ratio"), interval = $("#chat-interval");
+  if (document.activeElement !== ratio) ratio.value = Math.round(S.config.sound.drop_ratio * 100);
+  if (document.activeElement !== interval) interval.value = S.config.sound.min_interval;
+}
+
+function setChatPopover(open) {
+  $("#chattiness-pop").hidden = !open;
+  $("#chattiness-btn").setAttribute("aria-expanded", String(open));
+}
+
+$("#chattiness-btn").addEventListener("click", (e) => { e.stopPropagation(); setChatPopover($("#chattiness-pop").hidden); });
+$("#chattiness-pop").addEventListener("click", (e) => e.stopPropagation());
+document.addEventListener("click", () => setChatPopover(false));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") setChatPopover(false); });
+
+const onChatCustomInput = () => {
+  const ratio = Math.min(100, Math.max(0, Number($("#chat-ratio").value) || 0)) / 100;
+  const interval = Math.max(0, Number($("#chat-interval").value) || 0);
+  saveChatCustomValues({ ratio, interval });
+  S.chatCustom = true;
+  S.config.sound.drop_ratio = ratio;
+  S.config.sound.min_interval = interval;
+  markDirty();
+  $("#chattiness-name").textContent = chattinessChoice();
+};
+$("#chat-ratio").addEventListener("input", onChatCustomInput);
+$("#chat-interval").addEventListener("input", onChatCustomInput);
 
 $("#add-sound").addEventListener("click", () => openClipEditor());
 $("#master-volume").addEventListener("input", (e) => {

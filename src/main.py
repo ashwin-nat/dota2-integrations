@@ -84,7 +84,9 @@ async def main(
     # --- Rule engine setup ---
     sound = SoundManager(default_volume=rules_config.sound.volume / 100)
     arbiter = LightingArbiter(lighting)
-    executors: list[ActionExecutor] = [LightExecutor(arbiter), SoundExecutor(sound), WebhookExecutor()]
+    sound_executor = SoundExecutor(sound)
+    sound_executor.configure_filter(rules_config.sound.drop_ratio, rules_config.sound.min_interval)
+    executors: list[ActionExecutor] = [LightExecutor(arbiter), sound_executor, WebhookExecutor()]
     executor_by_type = {e.action_type: e for e in executors}
     bus = EventBus(history_size=DEBUG_EVENT_HISTORY if debug else 0)
     compiled = compile_rules(rules_config.rules, bus, executor_by_type)
@@ -103,6 +105,7 @@ async def main(
         arbiter.clear_all()
         state.set_compiled_rules(compile_rules(config.rules, bus, executor_by_type))
         sound.set_default_volume(config.sound.volume / 100)
+        sound_executor.configure_filter(config.sound.drop_ratio, config.sound.min_interval)
         # The lighting driver is built once at startup
         return config.lighting != rules_config.lighting
 
