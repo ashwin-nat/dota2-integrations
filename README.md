@@ -8,7 +8,6 @@ Grab the latest build from the [Releases page](https://github.com/ashwin-nat/dot
 
 - **Windows:** `soundbo-windows.exe`
 - **Mac (Apple Silicon, M1 and later):** `soundbo-mac.zip`
-- **Mac (Intel):** `soundbo-mac-intel.zip`
 
 Starting the app opens the rules editor in your browser. It also sets up Dota 2 to send it game state, by writing `gamestate_integration_soundbo.cfg` into every Dota install it finds (restart Dota if it was running). The app has no window of its own. It shows a ◆ icon in the menu bar (Mac) or the system tray (Windows); click it to reopen the editor, or choose **Quit**. On a Mac, clicking the app's Dock icon also reopens the editor.
 
