@@ -11,7 +11,8 @@
             "module": "src.main",
             "console": "integratedTerminal",
             "args": [
-
+                "--debug",
+                "--dump-filter"
             ],
             "cwd": "${workspaceFolder}"
         },
@@ -22,7 +23,9 @@
             "module": "src.main",
             "console": "integratedTerminal",
             "args": [
-                "--record"
+                "--record",
+                "--debug",
+                "--dump-filter"
             ],
             "cwd": "${workspaceFolder}"
         },

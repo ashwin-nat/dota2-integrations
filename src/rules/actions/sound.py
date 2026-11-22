@@ -21,9 +21,10 @@ class SoundExecutor(ActionExecutor[PlaySoundAction]):
 
     BURST_LIMIT = 3  # this many sounds from one game update are treated as a burst and dropped
 
-    def __init__(self, sound: SoundManager) -> None:
+    def __init__(self, sound: SoundManager, dump_filter: bool = False) -> None:
         super().__init__()
         self._sound = sound
+        self._dump_filter_enabled = dump_filter
         self._queue: asyncio.Queue[tuple[ActionBinding[PlaySoundAction], Event]] = asyncio.Queue()
         self._filter_settings = (0.0, 0.0)
         self._filter = DropFilter(*self._filter_settings)
@@ -43,7 +44,10 @@ class SoundExecutor(ActionExecutor[PlaySoundAction]):
 
     def workers(self) -> dict[str, Coroutine[Any, Any, None]]:
         """The queue-draining coroutine that plays the sounds."""
-        return {"action_sound": self._drain(), "drop_filter_dump": self._dump_filter()}
+        tasks = {"action_sound": self._drain()}
+        if self._dump_filter_enabled:
+            tasks["drop_filter_dump"] = self._dump_filter()
+        return tasks
 
     DUMP_INTERVAL = 5  # seconds between drop filter state dumps
 

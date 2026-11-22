@@ -55,6 +55,7 @@ DEBUG_EVENT_HISTORY = 100
 async def main(
     record: bool = False,
     debug: bool = False,
+    dump_filter: bool = False,
     on_stop: Callable[[Callable[[], None]], None] | None = None,
 ) -> None:
     asyncio.get_event_loop().set_exception_handler(_exception_handler)
@@ -84,7 +85,7 @@ async def main(
     # --- Rule engine setup ---
     sound = SoundManager(default_volume=rules_config.sound.volume / 100)
     arbiter = LightingArbiter(lighting)
-    sound_executor = SoundExecutor(sound)
+    sound_executor = SoundExecutor(sound, dump_filter=dump_filter)
     sound_executor.configure_filter(rules_config.sound.drop_ratio, rules_config.sound.min_interval)
     executors: list[ActionExecutor] = [LightExecutor(arbiter), sound_executor, WebhookExecutor()]
     executor_by_type = {e.action_type: e for e in executors}
@@ -260,18 +261,18 @@ def _enter_app_dir() -> None:
     os.chdir(app_dir)
 
 
-def _run_with_tray(record: bool, debug: bool) -> None:
+def _run_with_tray(record: bool, debug: bool, dump_filter: bool = False) -> None:
     """Run the app in a background thread and the tray icon on the main thread until either quits."""
     stoppers: list = []
     failure: list[BaseException] = []
     icon = tray.make_icon(lambda: _open_editor(BASE_URL, force=True), lambda: stoppers and stoppers[0]())
     if icon is None:
-        asyncio.run(main(record=record, debug=debug))
+        asyncio.run(main(record=record, debug=debug, dump_filter=dump_filter))
         return
 
     def app() -> None:
         try:
-            asyncio.run(main(record=record, debug=debug, on_stop=stoppers.append))
+            asyncio.run(main(record=record, debug=debug, dump_filter=dump_filter, on_stop=stoppers.append))
         except BaseException as e:
             failure.append(e)
         finally:
@@ -295,6 +296,7 @@ if __name__ == "__main__":
     _enter_app_dir()
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true", help="keep recent rule events in memory so /state (and the replay stepper) can show them")
+    parser.add_argument("--dump-filter", action="store_true", help="log the soundboard chattiness drop filter's state every 5 seconds")
     # TEMPORARY: recording is on by default in every build (a double-clicked exe can't take arguments).
     # Remove the default (back to action="store_true") and the CLAUDE.md note when it is no longer needed.
     parser.add_argument("--record", action=argparse.BooleanOptionalAction, default=True,
@@ -306,9 +308,9 @@ if __name__ == "__main__":
     setup_logging()
     try:
         if args.tray:
-            _run_with_tray(args.record, args.debug)
+            _run_with_tray(args.record, args.debug, args.dump_filter)
         else:
-            asyncio.run(main(record=args.record, debug=args.debug))
+            asyncio.run(main(record=args.record, debug=args.debug, dump_filter=args.dump_filter))
     except PortInUse:
         # Double-clicking the app again is the usual cause: show the running one instead
         if _app_already_running():
