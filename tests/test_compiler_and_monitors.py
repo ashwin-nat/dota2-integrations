@@ -95,6 +95,7 @@ def test_every_monitor_does_nothing_when_its_snapshot_part_is_missing():
         {"id": "i", "monitor": {"type": "item", "target": "item_bkb", "event": "COOLDOWN_READY"}, "actions": [_light(1)]},
         {"id": "bkb", "monitor": {"type": "item", "target": "item_black_king_bar", "event": "COOLDOWN_STARTED"}, "actions": [_light(2)]},
         {"id": "ib", "monitor": {"type": "item", "target": "item_blink", "event": "ITEM_LOST"}, "actions": [_light(3)]},
+        {"id": "w", "monitor": {"type": "item", "target": "item_ward_sentry", "event": "COOLDOWN_STARTED"}, "actions": [_light(11)]},
         {"id": "m", "monitor": {"type": "midas", "event": "CHARGED"}, "actions": [_light(4)]},
         {"id": "mo", "monitor": {"type": "midas", "event": "OVERCHARGED"}, "actions": [_light(5)]},
         {"id": "b", "monitor": {"type": "blink", "event": "COOLDOWN_STARTED"}, "actions": [_light(6)]},
@@ -439,3 +440,54 @@ def test_hero_int_rejects_non_number_fields_and_serializes_its_event():
     dumped = RulesConfig.model_validate({"rules": [_buyback_rule()]}).model_dump(mode="json")["rules"][0]["monitor"]
     assert dumped["event"] == "BUYBACK_COOLDOWN_RISES"
     RulesConfig.model_validate({"rules": [{**_buyback_rule(), "monitor": dumped}]})
+
+
+# Real ward frames (enemy_torm_ad t=1113-1121, ad_snap_buyback t=446-450, soundbo.log 2026-11-22):
+# a use shows cooldown 1 / max_cooldown 1 for a frame or two, then max_cooldown stays 1 at
+# cooldown 0 for as long as the ward is held. The generic item monitor read that as a cast on
+# every frame.
+def _ward_snap(name, cooldown, max_cooldown, charges=1, present=True):
+    from src.state.items import SingleChargeItem
+    item = SingleChargeItem(
+        slot_id="slot0", name=name, purchaser=0, item_level=1, can_cast=cooldown == 0,
+        cooldown=cooldown, max_cooldown=max_cooldown, passive=False, item_charges=charges, charges=charges,
+    )
+    items = SimpleNamespace(find=lambda n: item if present and n == name else None)
+    return StateSnapshot(items, None, None, None, None, None)
+
+
+def _ward_starts(name, frames):
+    compiled, _, arbiter, _ = _setup([
+        {"id": "w", "monitor": {"type": "item", "target": name, "event": "COOLDOWN_STARTED"}, "actions": [_light(1)]},
+    ])
+    for frame in frames:
+        compiled.evaluate_all(frame)
+    return sum(1 for call in arbiter.calls if call[0] == "set")
+
+
+def test_ward_fires_once_on_use_and_not_every_frame_after():
+    for name in ("item_ward_observer", "item_ward_sentry", "item_ward_dispenser"):
+        frames = [_ward_snap(name, 0, 0, 2)] * 3 + [
+            _ward_snap(name, 1, 1, 1),   # placed
+            _ward_snap(name, 0, 1, 1),   # max_cooldown stays 1 from here on
+        ] + [_ward_snap(name, 0, 1, 1)] * 10
+        assert _ward_starts(name, frames) == 1, name
+
+
+def test_ward_stuck_max_cooldown_alone_never_fires():
+    # Joined mid-match holding a ward in the 0 / 1 state (the 2026-11-22 loop)
+    assert _ward_starts("item_ward_observer", [_ward_snap("item_ward_observer", 0, 1)] * 20) == 0
+
+
+def test_last_charge_ward_fires_once_even_though_charges_do_not_drop():
+    name = "item_ward_observer"
+    frames = [_ward_snap(name, 0, 0)] * 2 + [_ward_snap(name, 1, 1)] * 2 + [
+        _ward_snap(name, 0, 0), _ward_snap(name, 0, 0, present=False)]
+    assert _ward_starts(name, frames) == 1
+
+
+def test_ward_fires_again_for_the_next_use():
+    name = "item_ward_observer"
+    frames = [_ward_snap(name, 0, 0, 2), _ward_snap(name, 1, 1, 1), _ward_snap(name, 0, 1, 1),
+              _ward_snap(name, 1, 1, 0), _ward_snap(name, 0, 1, 0)]
+    assert _ward_starts(name, frames) == 2

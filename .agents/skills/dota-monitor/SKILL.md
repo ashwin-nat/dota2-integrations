@@ -37,9 +37,10 @@ Go down this list and stop at the first that fits.
 
 1. **An existing event on an existing type already does it.** Check the monitor tables in `CLAUDE.md` and the `Literal[...]` of each config. Often the answer is a rule, not code (use `dota-rules`).
 2. **Add an event to an existing type.** Add the literal to its config's `event`, a class that declares it (`for_type = MonitorType.ITEM`, `for_event = "X"` in the class body; the config's `_create` finds it through `monitor_class`), and a label in `app.js`.
-3. **Specialise one target of a type** when most targets behave one way and a single item or ability differs. Subclass the generic monitor, override only the differing hook, and set `for_target` to that item or ability (type and event are inherited; other events of that target fall back to the generic classes):
+3. **Specialise one target of a type** when most targets behave one way and a single item or ability differs. Subclass the generic monitor, override only the differing hook, and set `for_target` to a tuple of the item or ability names (type and event are inherited; other events of that target fall back to the generic classes):
    - Blink: `BlinkCooldownStartedMonitor` overrides `_started` to ignore the 3 s damage-cancel cooldown. It also has its own `blink` type as a shortcut for `item` on `item_blink`.
-   - BKB: `BkbCooldownStartedMonitor` ends after the buff window because GSI has no buff data. Sets `for_target = "item_black_king_bar"`, so the rule is still a plain `item` rule.
+   - BKB: `BkbCooldownStartedMonitor` ends after the buff window because GSI has no buff data. Sets `for_target = ("item_black_king_bar",)`, so the rule is still a plain `item` rule.
+   - Wards: `WardCooldownStartedMonitor`, `for_target = ("item_ward_observer", "item_ward_sentry", "item_ward_dispenser")`. Their `max_cooldown` sticks at 1 after a use, so the generic `cooldown == max_cooldown - 1` check matched every frame; a use is a plain cooldown rise.
    - Midas: its own `midas` type because its events are about charges, not cooldowns, and the target is fixed (`item_hand_of_midas`).
    Prefer specialising by name inside an existing type (`for_target`) over a new `MonitorType`; a new type only earns its place when the events themselves are different or the target is fixed and the editor needs a dedicated entry.
 4. **A new monitor type.** Use it when the data source or the meaning is different from every existing one.

@@ -106,15 +106,16 @@ class TargetedStatefulMonitor(StatefulMonitor):
             for_type = MonitorType.ITEM
             for_event = "COOLDOWN_READY"
 
-    `for_target` limits a class to one item or ability name (others fall back to the class
-    without one). The fields are inherited, so a specialised subclass sets only what differs
-    (Blink: `for_target = "item_blink"`); a subclass that changes none just shares code.
+    `for_target` is a tuple of the item or ability names a class is limited to (others fall
+    back to the class without one). The fields are inherited, so a
+    specialised subclass sets only what differs (Blink: `for_target = ("item_blink",)`); a
+    subclass that changes none just shares code.
     """
 
     # Every subclass must set for_type and for_event (checked in __init__)
     for_type: ClassVar[MonitorType | None] = None
     for_event: ClassVar[str | None] = None
-    for_target: ClassVar[str | None] = None
+    for_target: ClassVar[tuple[str, ...] | None] = None
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         assert self.for_type is not None, f"{type(self).__name__} must set for_type"
@@ -123,21 +124,25 @@ class TargetedStatefulMonitor(StatefulMonitor):
         self._target: str = rule.monitor.target
 
     @classmethod
-    def declared_for(cls) -> tuple[MonitorType, str, str | None]:
-        """(for_type, for_event, for_target): the event and target this class handles."""
+    def declared_for(cls) -> list[tuple[MonitorType, str, str | None]]:
+        """One (for_type, for_event, target) key per target this class handles (one key with
+        target None when it has no `for_target`)."""
         # Every subclass today is a monitor for its own event; none exists only to share code.
         # These asserts catch a forgotten for_type / for_event, and a subclass that changes none
         # of the fields (it would claim its parent's event). If an intermediate base or a
         # code-sharing subclass is ever needed, remove them and skip such classes in monitor_class.
         assert cls.for_type is not None, f"{cls.__name__} must set for_type"
         assert cls.for_event is not None, f"{cls.__name__} must set for_event"
-        key = (cls.for_type, cls.for_event, cls.for_target)
         for base in cls.__bases__:
             if issubclass(base, TargetedStatefulMonitor):
-                assert (base.for_type, base.for_event, base.for_target) != key, (
-                    f"{cls.__name__} sets the same for_type, for_event and for_target as {base.__name__}"
-                )
-        return key
+                assert (base.for_type, base.for_event, base.for_target) != (
+                    cls.for_type, cls.for_event, cls.for_target
+                ), f"{cls.__name__} sets the same for_type, for_event and for_target as {base.__name__}"
+        assert cls.for_target is None or (
+            isinstance(cls.for_target, tuple) and all(isinstance(t, str) for t in cls.for_target)
+        ), f"{cls.__name__}.for_target must be a tuple of strings, e.g. (\"item_blink\",)"
+        targets = cls.for_target or (None,)
+        return [(cls.for_type, cls.for_event, target) for target in targets]
 
 
 def _subclasses(cls: type[TargetedStatefulMonitor]) -> set[type[TargetedStatefulMonitor]]:
@@ -154,9 +159,9 @@ def monitor_class(
     """The monitor class declared for this event and target, else the one for the event alone."""
     by_key: dict[tuple[MonitorType, str, str | None], type[TargetedStatefulMonitor]] = {}
     for cls in _subclasses(TargetedStatefulMonitor):
-        key = cls.declared_for()
-        assert key not in by_key, f"{cls.__name__} and {by_key[key].__name__} both declare {key}"
-        by_key[key] = cls
+        for key in cls.declared_for():
+            assert key not in by_key, f"{cls.__name__} and {by_key[key].__name__} both declare {key}"
+            by_key[key] = cls
     found = by_key.get((monitor_type, event, target)) or by_key.get((monitor_type, event, None))
     # Config validation only lets through events listed in the config's Literal
     assert found is not None, f"no monitor class declared for {monitor_type} {event}"

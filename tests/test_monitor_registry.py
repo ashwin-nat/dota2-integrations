@@ -12,6 +12,7 @@ from src.rules.ability_monitors import (
 from src.rules.item_monitors import (
     BkbCooldownStartedMonitor,
     BlinkCooldownStartedMonitor,
+    WardCooldownStartedMonitor,
     BlinkMonitorConfig,
     CooldownReadyMonitor,
     CooldownStartedMonitor,
@@ -46,6 +47,9 @@ def test_target_specific_class_wins_and_others_fall_back():
     assert monitor_class(MonitorType.ITEM, "COOLDOWN_STARTED", "item_blink") is BlinkCooldownStartedMonitor
     assert monitor_class(MonitorType.ITEM, "COOLDOWN_STARTED", "item_black_king_bar") is BkbCooldownStartedMonitor
     assert monitor_class(MonitorType.ITEM, "COOLDOWN_STARTED", "item_manta") is CooldownStartedMonitor
+    for ward in ("item_ward_observer", "item_ward_sentry", "item_ward_dispenser"):
+        assert monitor_class(MonitorType.ITEM, "COOLDOWN_STARTED", ward) is WardCooldownStartedMonitor
+    assert monitor_class(MonitorType.ITEM, "COOLDOWN_READY", "item_ward_sentry") is CooldownReadyMonitor
     assert monitor_class(MonitorType.ITEM, "COOLDOWN_READY", "item_blink") is CooldownReadyMonitor
     assert (
         monitor_class(MonitorType.ABILITY, "COOLDOWN_STARTED", "spirit_breaker_charge_of_darkness")
@@ -76,6 +80,15 @@ def test_targeted_monitor_without_event_asserts():
         Missing(rule, bus=None)
     with pytest.raises(AssertionError, match="must set for_type"):
         Missing.declared_for()
+
+
+@pytest.mark.parametrize("bad", ["item_blink", ["item_blink"], (1,)])
+def test_for_target_must_be_a_tuple_of_strings(bad):
+    class Bad(CooldownReadyMonitor):
+        for_target = bad
+
+    with pytest.raises(AssertionError, match="must be a tuple of strings"):
+        Bad.declared_for()
 
 
 def test_subclass_that_changes_no_field_asserts():

@@ -146,7 +146,7 @@ class ChargeOfDarknessCooldownStartedMonitor(AbilityCooldownStartedMonitor):
     counts as a cast. (On a short charge the second start gives the same number
     as the first, so it never looked like a jump in the first place.)
     """
-    for_target = "spirit_breaker_charge_of_darkness"
+    for_target = ("spirit_breaker_charge_of_darkness",)
 
     def _is_cast(self, prev_cooldown: int, cooldown: int) -> bool:
         return prev_cooldown == 0 and cooldown > 0

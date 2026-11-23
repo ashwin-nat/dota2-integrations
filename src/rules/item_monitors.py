@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ItemMonitorConfig(TargetedMonitorConfig):
-    """Item events. Items with their own class for an event (Blink, BKB) set `for_target` on it."""
+    """Item events. Items with their own class for an event (Blink, BKB, wards) set `for_target` on it."""
     type: Literal[MonitorType.ITEM]
     event: Literal["COOLDOWN_READY", "COOLDOWN_STARTED", "ITEM_ACQUIRED", "ITEM_LOST"]
 
@@ -206,12 +206,26 @@ class BlinkCooldownStartedMonitor(CooldownStartedMonitor):
     Why its own class: taking damage puts Blink on a 3 s cooldown without it being used, which
     the generic item monitor would read as a cast.
     """
-    for_target = "item_blink"
+    for_target = ("item_blink",)
 
     def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:
         # When the player gets hit, blink gets cancelled for 3 sec (game for whatever reason reprots it as 4)
         cancelled = curr.max_cooldown == 4
         return not cancelled and self._prev_cooldown == 0 and cooldown > 0
+
+
+class WardCooldownStartedMonitor(CooldownStartedMonitor):
+    """Fires when an observer, sentry or dispenser ward is placed (cooldown 0 -> > 0).
+
+    Why its own class: wards report max_cooldown 1 (cooldown 1) only for the frame or two after
+    a use, and keep max_cooldown 1 at cooldown 0 for the rest of the match if charges remain.
+    The generic check (cooldown == max_cooldown - 1) is then 0 == 0 on every frame, so it fired
+    once a second until the ward was gone (soundbo.log, 2026-11-22 13:26), and never on a real use.
+    """
+    for_target = ("item_ward_observer", "item_ward_sentry", "item_ward_dispenser")
+
+    def _started(self, curr: NoChargeItem | SingleChargeItem | MultiChargeItem, cooldown: int) -> bool:
+        return self._prev_cooldown == 0 and cooldown > 0
 
 
 # GSI does not report the BKB buff, so approximate it as the first N seconds of the cooldown.
@@ -228,7 +242,7 @@ class BkbCooldownStartedMonitor(CooldownStartedMonitor):
     The buff window is measured on the item's own cooldown (which counts down in game
     time, so pausing is respected) and ends early if the item is lost.
     """
-    for_target = "item_black_king_bar"
+    for_target = ("item_black_king_bar",)
 
     def __init__(self, rule: Rule, bus: EventBus) -> None:
         super().__init__(rule, bus)
