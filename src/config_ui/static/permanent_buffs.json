@@ -14,5 +14,13 @@
     "description": "Whenever an enemy hero dies within 925 units of Muerta, she gains a stack of 1% spell amplification. When Muerta dies she loses half the stacks, rounded down.",
     "kind": "bidirectional",
     "icon": "ability:muerta_supernatural"
+  },
+  {
+    "key": "modifier_axe_culling_blade_permanent",
+    "name": "Culling Blade",
+    "tooltip": "Axe's permanent stacks from Culling Blade kills.",
+    "description": "Axe permanently drenches his blade every time he kills an enemy Hero with Culling Blade, gaining bonus armor for each stack.",
+    "kind": "monotonic",
+    "icon": "ability:axe_culling_blade"
   }
 ]
