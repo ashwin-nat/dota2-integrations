@@ -306,6 +306,13 @@ select:focus, input:focus-visible { border-color: var(--gold); box-shadow: 0 0 0
   transition: transform .08s, box-shadow .12s, filter .12s;
   filter: saturate(.85) brightness(.9);
 }
+.tip {
+  position: fixed; z-index: 100; max-width: 280px; padding: 10px 14px; pointer-events: none;
+  background: var(--panel-2); border: 1px solid var(--gold-lo); border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgba(0,0,0,.65); font-size: 15px; line-height: 1.35; color: var(--text);
+}
+.tip[hidden] { display: none; }
+.tip-title { font: 600 18px/1.2 "Barlow Condensed", sans-serif; letter-spacing: .04em; color: var(--gold-hi); margin-bottom: 4px; }
 .slot.hero { aspect-ratio: 16 / 9; }
 .slot.ability { aspect-ratio: 1; }
 .slot:hover { transform: translateY(-1px) scale(1.04); filter: none; box-shadow: 0 0 0 1px var(--gold-lo), 0 4px 10px rgba(0,0,0,.7); z-index: 1; }

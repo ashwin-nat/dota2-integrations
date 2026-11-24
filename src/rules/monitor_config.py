@@ -20,6 +20,7 @@ class MonitorType(StrEnum):
     HERO  = "hero"
     HERO_BOOL = "hero_bool"
     HERO_INT = "hero_int"
+    HERO_BUFF = "hero_buff"
     ABILITY = "ability"
     PERIODIC = "periodic"
     ONCE = "once"

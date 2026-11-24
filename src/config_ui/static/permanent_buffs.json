@@ -1,0 +1,18 @@
+[
+  {
+    "key": "modifier_tidehunter_leviathans_catch_counter",
+    "name": "Leviathan's Catch",
+    "tooltip": "Tidehunter's permanent stacks from Leviathan's Catch.",
+    "description": "Whenever an enemy hero is killed by Tidehunter or dies under his debuffs, a fish appears in their place; Tidehunter can eat the fish to permanently gain 5 Health, 2 Attack Range, and 1 Bonus Damage Block.\nTidehunter eats a free fish every time he reaches an even hero level.",
+    "kind": "monotonic",
+    "icon": "ability:tidehunter_leviathans_catch"
+  },
+  {
+    "key": "modifier_muerta_supernatural",
+    "name": "Supernatural",
+    "tooltip": "Muerta's Supernatural stacks, gained and lost over the game.",
+    "description": "Whenever an enemy hero dies within 925 units of Muerta, she gains a stack of 1% spell amplification. When Muerta dies she loses half the stacks, rounded down.",
+    "kind": "bidirectional",
+    "icon": "ability:muerta_supernatural"
+  }
+]

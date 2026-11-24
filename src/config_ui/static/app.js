@@ -37,6 +37,20 @@ const GAME_EVENTS = [
   { type: "midas", event: "OVERCHARGED", label: "Midas overcharged", sub: "2 charges, wasted gold!", img: itemImg("hand_of_midas") },
 ];
 
+// Permanent buffs come from static/permanent_buffs.json (key, name, tooltip, description, kind, icon), so tracking a new
+// buff is a data change. The backend takes any buff name; `kind` is Dota knowledge kept only here:
+// "monotonic" buffs only grow (one "Stack gained" tab), "bidirectional" ones also drop (a "Stack lost" tab too).
+let BUFFS = [];
+const BUFF_ICON = { ability: abilityImg, item: itemImg, hero: heroImg };
+const buffIcon = (b) => {
+  const [src, name] = b.icon.includes(":") ? b.icon.split(":") : ["ability", b.icon];
+  return (BUFF_ICON[src] || abilityImg)(name);
+};
+const buffEvents = (key, kind) => [
+  { event: "STACK_GAINED", label: "Stack gained", desc: "Each time this buff's stack count goes up." },
+  ...(kind === "bidirectional" ? [{ event: "STACK_LOST", label: "Stack lost", desc: "Each time this buff's stack count goes down." }] : []),
+].map((e) => ({ ...e, monitor: { type: "hero_buff", buff: key, event: e.event } }));
+
 // Periodic triggers on the game clock. offset shifts each trigger (negative = that many seconds early);
 // min_time / max_time are clock seconds limiting which triggers fire. Timings follow the current patch.
 const REMINDER_PRESETS = [
@@ -128,7 +142,11 @@ async function api(path, opts = {}) {
 }
 
 async function loadAll() {
-  const [config, media, board, info] = await Promise.all([api("/api/config"), api("/api/media"), api("/api/soundboard"), api("/api/info")]);
+  const [config, media, board, info, buffs] = await Promise.all([
+    api("/api/config"), api("/api/media"), api("/api/soundboard"), api("/api/info"),
+    api("/ui/static/permanent_buffs.json").catch(() => []),
+  ]);
+  BUFFS = buffs;
   S.dataDir = info.data_dir;
   $("#power").hidden = !info.can_shutdown;
   $("#recording-menu").hidden = !info.recording;
@@ -167,7 +185,7 @@ function sameMonitor(a, b) {
   a = norm(a); b = norm(b);
   if (a.type === "periodic" || b.type === "periodic") return a.type === b.type && periodicKey(a) === periodicKey(b);
   if (a.type === "once" || b.type === "once") return a.type === b.type && a.time === b.time;
-  return a.type === b.type && (a.target || "") === (b.target || "") && a.event === b.event;
+  return a.type === b.type && (a.target || "") === (b.target || "") && (a.buff || "") === (b.buff || "") && a.event === b.event;
 }
 
 const rulesFor = (monitor) => S.config.rules.filter((r) => sameMonitor(r.monitor, monitor));
@@ -178,7 +196,7 @@ function rulesForTarget(target) {
 }
 
 function ruleIdFor(monitor) {
-  const target = (monitor.target || (monitor.field ? "hero" : monitor.type)).replace(/^item_/, "");
+  const target = (monitor.target || (monitor.buff ? monitor.buff.replace(/^modifier_/, "") : monitor.field ? "hero" : monitor.type)).replace(/^item_/, "");
   const suffix = {
     ITEM_ACQUIRED: "bought", BUYBACK_COOLDOWN_RISES: "buyback_used", COOLDOWN_STARTED: "used", COOLDOWN_READY: "ready", ITEM_LOST: "lost",
   }[monitor.event] || monitor.event.toLowerCase();
@@ -220,6 +238,11 @@ function describeTrigger(m) {
     const target = monitorTarget(m);
     const item = lookup.items.get(target);
     return { title: `${item?.name || target} · ${ev(ITEM_EVENTS)}`, sub: target, img: item ? itemImg(item.img) : itemImg(target.replace(/^item_/, "")) };
+  }
+  if (m.type === "hero_buff") {
+    const b = BUFFS.find((x) => x.key === m.buff);
+    const ev = buffEvents(m.buff, "bidirectional").find((e) => e.event === m.event);
+    return { title: `${b?.name || m.buff} · ${ev?.label || m.event}`, sub: m.buff, img: b ? buffIcon(b) : undefined, glyph: b ? undefined : "✚" };
   }
   if (m.type === "ability") {
     const ab = lookup.abilities.get(m.target);
@@ -595,6 +618,20 @@ function setChatPopover(open) {
 
 $("#chattiness-btn").addEventListener("click", (e) => { e.stopPropagation(); setChatPopover($("#chattiness-pop").hidden); });
 $("#chattiness-pop").addEventListener("click", (e) => e.stopPropagation());
+// Styled tooltip for any element with data-tip (and optional data-tip-title)
+const tipEl = h("div", { class: "tip", role: "tooltip", hidden: true });
+document.body.append(tipEl);
+document.addEventListener("mouseover", (e) => {
+  const t = e.target.closest?.("[data-tip]");
+  if (!t) { tipEl.hidden = true; return; }
+  tipEl.replaceChildren(...[t.dataset.tipTitle ? h("div", { class: "tip-title" }, t.dataset.tipTitle) : null, h("div", {}, t.dataset.tip)].filter(Boolean));
+  tipEl.hidden = false;
+  const r = t.getBoundingClientRect(), w = tipEl.offsetWidth, ht = tipEl.offsetHeight;
+  const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  const top = r.bottom + 10 + ht > window.innerHeight ? r.top - ht - 10 : r.bottom + 10;
+  tipEl.style.left = `${left}px`;
+  tipEl.style.top = `${top}px`;
+});
 document.addEventListener("click", () => setChatPopover(false));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") setChatPopover(false); });
 
@@ -648,7 +685,7 @@ function render() {
   // The soundboard and Friends tabs don't use the inspector, so they get its width too
   $(".layout").classList.toggle("no-inspector", S.tab === "soundboard" || S.tab === "friends");
   board.dataset.tab = S.tab; // lets a tab tune its own text size
-  board.replaceChildren(...[({ rules: renderRules, items: renderItems, heroes: renderHeroes, events: renderEvents, sounds: renderSounds, soundboard: renderSoundboard, friends: renderFriends }[S.tab])()].flat().filter(Boolean));
+  board.replaceChildren(...[({ rules: renderRules, items: renderItems, heroes: renderHeroes, events: renderEvents, buffs: renderBuffs, sounds: renderSounds, soundboard: renderSoundboard, friends: renderFriends }[S.tab])()].flat().filter(Boolean));
   board.scrollTop = scroll;
   renderInspector();
 }
@@ -659,10 +696,12 @@ function select(selection) {
   render();
 }
 
-function slot({ img, label, cost, cls = "", count = 0, selected, onclick, title }) {
+function slot({ img, label, cost, cls = "", count = 0, selected, onclick, title, tip }) {
   const el = h("button", {
     class: `slot ${cls} ${count ? "has-rules" : ""} ${selected ? "selected" : ""}`,
-    title, "aria-label": title || label, onclick,
+    // A styled tooltip (see showTip) replaces the browser one when `tip` is given
+    title: tip ? null : title, "aria-label": title || label, onclick,
+    "data-tip-title": tip ? title : null, "data-tip": tip || null,
     style: img ? { backgroundImage: `url("${img}")` } : null,
   },
   count ? h("span", { class: "badge" }, count) : null,
@@ -671,11 +710,11 @@ function slot({ img, label, cost, cls = "", count = 0, selected, onclick, title 
   return el;
 }
 
-const RULE_KINDS = [["", "All triggers"], ["item", "Items"], ["ability", "Abilities"], ["game", "Game events"], ["reminder", "Reminders"]];
+const RULE_KINDS = [["", "All triggers"], ["item", "Items"], ["ability", "Abilities"], ["game", "Game events"], ["buff", "Permanent buffs"], ["reminder", "Reminders"]];
 const RULE_ACTIONS = [["", "Any action"], ["play_sound", "Plays a sound"], ["light", "Sets a light"], ["webhook", "Calls a webhook"], ["missing", "Missing sound file"]];
 const RULE_SORTS = [["default", "File order"], ["name", "Name A–Z"], ["name-desc", "Name Z–A"], ["kind", "Trigger type"], ["actions", "Most actions"]];
 
-const ruleKind = (m) => (["item", "blink", "midas"].includes(m.type) ? "item" : m.type === "ability" ? "ability" : isReminder(m) ? "reminder" : "game");
+const ruleKind = (m) => (["item", "blink", "midas"].includes(m.type) ? "item" : m.type === "ability" ? "ability" : m.type === "hero_buff" ? "buff" : isReminder(m) ? "reminder" : "game");
 
 function visibleRules() {
   const q = S.ruleQuery.trim().toLowerCase();
@@ -689,7 +728,7 @@ function visibleRules() {
     return text.some((t) => t && t.toLowerCase().includes(q));
   });
   const title = (r) => describeTrigger(r.monitor).title.toLowerCase();
-  const order = { item: 0, ability: 1, game: 2, reminder: 3 };
+  const order = { item: 0, ability: 1, game: 2, buff: 3, reminder: 4 };
   const sorts = {
     name: (a, b) => title(a).localeCompare(title(b)),
     "name-desc": (a, b) => title(b).localeCompare(title(a)),
@@ -768,6 +807,9 @@ function jumpTo(monitor, rule) {
     S.tab = "heroes";
     S.heroKey = lookup.abilities.get(monitor.target)?.hero.key || S.heroKey;
     select({ kind: "ability", key: monitor.target, event: monitor.event });
+  } else if (monitor.type === "hero_buff") {
+    S.tab = "buffs";
+    select({ kind: "buff", key: monitor.buff, event: monitor.event });
   } else if (isReminder(monitor)) {
     S.tab = "events";
     select({ kind: "reminder", key: (rule || rulesFor(monitor)[0])?.id });
@@ -866,6 +908,24 @@ function renderHeroDetail(hero) {
         h("div", { class: "name" }, ab.name))))));
 }
 
+function renderBuffs() {
+  const used = [...new Set(S.config.rules.filter((r) => r.monitor.type === "hero_buff").map((r) => r.monitor.buff))];
+  const unknown = used.filter((k) => !BUFFS.some((b) => b.key === k));
+  const count = (key) => S.config.rules.filter((r) => r.monitor.type === "hero_buff" && r.monitor.buff === key && activeActions(r).length).length;
+  const pick = (key) => select({ kind: "buff", key });
+  const isSel = (key) => S.selection?.kind === "buff" && S.selection.key === key;
+  const out = [h("div", { class: "board-head" }, h("h1", {}, "Permanent buffs"))];
+  if (!BUFFS.length && !unknown.length) out.push(h("p", { class: "hint" }, "No permanent buffs listed. Add them to permanent_buffs.json."));
+  out.push(h("div", { class: "icon-grid" }, BUFFS.map((b) => slot({
+    img: buffIcon(b), title: b.name, tip: b.tooltip, count: count(b.key), selected: isSel(b.key), onclick: () => pick(b.key),
+  }))));
+  if (unknown.length) {
+    out.push(h("div", { class: "section-title" }, "Other"));
+    out.push(h("div", { class: "icon-grid" }, unknown.map((k) => slot({ cls: "no-img", label: k, count: count(k), selected: isSel(k), onclick: () => pick(k) }))));
+  }
+  return out;
+}
+
 function renderEvents() {
   const reminders = S.config.rules.filter((r) => isReminder(r.monitor));
   const card = ({ key, glyph, label, sub, n, onclick }) => h("button", {
@@ -886,7 +946,7 @@ function renderEvents() {
   return [
     h("div", { class: "board-head" }, h("h1", {}, "Game events")),
     h("div", { class: "event-grid" }, GAME_EVENTS.map((g) => {
-      const n = rulesFor({ type: g.type, event: g.event }).filter((r) => activeActions(r).length).reduce((s, r) => s + activeActions(r).length, 0);
+      const n = rulesFor({ type: g.type, event: g.event, ...g.monitor }).filter((r) => activeActions(r).length).reduce((s, r) => s + activeActions(r).length, 0);
       const key = `${g.type}:${g.event}`;
       return h("button", {
         class: `event-card ${n ? "has-rules" : ""} ${S.selection?.kind === "game" && S.selection.key === key ? "selected" : ""}`,
@@ -1994,6 +2054,11 @@ function renderInspector() {
     head = { title: ab?.name || sel.key, img: abilityImg(sel.key), square: true, sub: ab?.hero.name, desc: ab?.desc };
     events = ABILITY_EVENTS.map((e) => ({ ...e, monitor: { type: "ability", target: sel.key, event: e.event } }));
     if (ab && !ab.has_cd) warn = "This looks like a passive (no cooldown), so it will never trigger.";
+  } else if (sel.kind === "buff") {
+    const b = BUFFS.find((x) => x.key === sel.key);
+    head = { title: b?.name || sel.key, img: b ? buffIcon(b) : null, glyph: b ? "" : "✚", desc: b?.description };
+    // A buff missing from the data file still shows its saved rules, with both events since its kind is unknown
+    events = buffEvents(sel.key, b?.kind ?? "bidirectional");
   } else {
     const [type, event] = sel.key.split(":");
     const g = GAME_EVENTS.find((x) => x.type === type && x.event === event);
@@ -2101,6 +2166,8 @@ function renderReminderTiming(rule) {
 
 function renderEventBody(ev) {
   const monitor = ev.monitor;
+  // A stack change is a moment, so a light would flash for one update; permanent buffs offer sound and webhook only
+  const noLight = monitor.type === "hero_buff";
   const rules = ev.rule ? [ev.rule] : rulesFor(monitor);
   const actions = rules.flatMap((r) => r.actions.map((a) => ({ rule: r, action: a })));
   const changed = () => { markDirty(); render(); };
@@ -2121,10 +2188,10 @@ function renderEventBody(ev) {
 
   return h("div", { class: "event-body" },
     h("p", { class: "event-desc" }, ev.desc),
-    actions.length ? actions.map(({ rule, action }) => renderAction(rule, action, monitor, changed)) : h("p", { class: "hint" }, "Nothing happens yet. Add a sound or a light:"),
+    actions.length ? actions.map(({ rule, action }) => renderAction(rule, action, monitor, changed)) : h("p", { class: "hint" }, noLight ? "Nothing happens yet. Add a sound:" : "Nothing happens yet. Add a sound or a light:"),
     h("div", { class: "add-row" },
       addSoundButton(add, existing("play_sound")),
-      existing("light") ? null : h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, icon("light"), "Light"),
+      existing("light") || noLight ? null : h("button", { class: "btn btn-sm", onclick: () => add({ type: "light", enabled: true, r: 255, g: 0, b: 0, priority: isBaseline(monitor) ? null : nextPriority() }) }, icon("light"), "Light"),
       h("button", { class: "btn btn-sm btn-ghost", title: existing("webhook") ? "Add another endpoint to this webhook" : "Call a URL",
         onclick: () => existing("webhook") ? add(null, () => existing("webhook").endpoints.push(newEndpoint())) : add({ type: "webhook", enabled: true, endpoints: [newEndpoint()] }) },
       icon("webhook"), existing("webhook") ? "Webhook (endpoint)" : "Webhook")),

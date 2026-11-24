@@ -43,6 +43,17 @@ class HeroState:
     talent_7: bool | None
     talent_8: bool | None
     attributes_level: int | None
+    # Buffs that stay on the hero, modifier name -> stack_count. {} when none (a missing key counts as 0)
+    permanent_buffs: dict[str, int]
+
+
+def _parse_buffs(raw: object) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        name: int(entry.get("stack_count", 0)) if isinstance(entry, dict) else 0
+        for name, entry in raw.items()
+    }
 
 
 def parse_hero(data: dict) -> HeroState:
@@ -85,4 +96,5 @@ def parse_hero(data: dict) -> HeroState:
         talent_7=g("talent_7"),
         talent_8=g("talent_8"),
         attributes_level=g("attributes_level"),
+        permanent_buffs=_parse_buffs(g("permanent_buffs")),
     )

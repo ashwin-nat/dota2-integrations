@@ -103,6 +103,7 @@ def test_every_monitor_does_nothing_when_its_snapshot_part_is_missing():
         {"id": "a", "monitor": {"type": "ability", "target": "x", "event": "COOLDOWN_STARTED"}, "actions": [_light(8)]},
         {"id": "p", "monitor": {"type": "periodic", "period": 30}, "actions": [_light(9)]},
         {"id": "hi", "monitor": {"type": "hero_int", "field": "buyback_cooldown"}, "actions": [_light(10)]},
+        {"id": "hb", "monitor": {"type": "hero_buff", "buff": "modifier_x", "event": "STACK_LOST"}, "actions": [_light(12)]},
         {"id": "mp", "monitor": {"type": "map", "event": "PAUSED"}, "actions": [{"type": "light", "r": 1, "g": 1, "b": 1}]},
     ]
     compiled, bus, arbiter, _ = _setup(rules)
@@ -442,6 +443,73 @@ def test_hero_int_rejects_non_number_fields_and_serializes_its_event():
     RulesConfig.model_validate({"rules": [{**_buyback_rule(), "monitor": dumped}]})
 
 
+def _buff_rule(buff, event="STACK_GAINED"):
+    return {"id": "hb", "monitor": {"type": "hero_buff", "buff": buff, "event": event}, "actions": [_light(5)]}
+
+
+def _buff_snap(buffs):
+    return StateSnapshot(None, None, None, SimpleNamespace(permanent_buffs=buffs), None, None)
+
+
+def _buff_calls(rule, frames):
+    compiled, _, arbiter, _ = _setup([rule])
+    for buffs in frames:
+        compiled.evaluate_all(_buff_snap(buffs))
+    return arbiter.calls
+
+
+_TIDE = "modifier_tidehunter_leviathans_catch_counter"
+_MUERTA = "modifier_muerta_supernatural"
+
+
+def test_hero_buff_tidehunter_fires_on_each_new_stack_and_not_on_the_reset():
+    # vishnu_test: {} -> 1 at 1837 s, 1 -> 2 at 2069 s, then {} again at the next match
+    # (the key vanishes, so a drop to 0), then 1 again in that match.
+    frames = [{}, {}, {_TIDE: 1}, {_TIDE: 1}, {_TIDE: 2}, {_TIDE: 2}, {}, {_TIDE: 1}]
+    calls = _buff_calls(_buff_rule(_TIDE), frames)
+    assert calls == [("set", 5, (1, 2, 3)), ("clear", 5)] * 2 + [("set", 5, (1, 2, 3))]  # last one still active
+
+
+def test_hero_buff_muerta_gained_and_lost_are_separate_rules():
+    # muerta recording: 0 -> 1 -> 2 -> 1 (665 s) ... 4 -> 2 (1206 s) ... 4 -> 6 (1763 s)
+    frames = [{_MUERTA: 0}, {_MUERTA: 1}, {_MUERTA: 2}, {_MUERTA: 1}, {_MUERTA: 4}, {_MUERTA: 2}, {_MUERTA: 6}]
+    gained = _buff_calls(_buff_rule(_MUERTA), frames)
+    lost = _buff_calls(_buff_rule(_MUERTA, "STACK_LOST"), frames)
+    assert [c for c in gained if c[0] == "set"] == [("set", 5, (1, 2, 3))] * 4   # 0>1, 1>2, 1>4, 2>6
+    assert [c for c in lost if c[0] == "set"] == [("set", 5, (1, 2, 3))] * 2     # 2>1, 4>2
+
+
+def test_hero_buff_first_frame_missing_hero_and_other_buffs_do_not_fire():
+    rule = _buff_rule(_MUERTA)
+    assert _buff_calls(rule, [{_MUERTA: 15}, {_MUERTA: 15}]) == []        # joined mid-match
+    assert _buff_calls(rule, [{}, {_TIDE: 3}]) == []                      # a different buff
+    compiled, _, arbiter, _ = _setup([rule])
+    compiled.evaluate_all(_buff_snap({_MUERTA: 1}))
+    compiled.evaluate_all(StateSnapshot(None, None, None, None, None, None))
+    compiled.evaluate_all(_buff_snap({_MUERTA: 2}))                       # place kept across the gap
+    assert arbiter.calls == [("set", 5, (1, 2, 3))]
+
+
+def test_hero_buff_clear_resets_the_previous_count():
+    compiled, _, arbiter, _ = _setup([_buff_rule(_MUERTA)])
+    compiled.evaluate_all(_buff_snap({_MUERTA: 1}))
+    compiled.clear_all()
+    compiled.evaluate_all(_buff_snap({_MUERTA: 5}))   # first frame of a new match: records only
+    assert arbiter.calls == []
+
+
+def test_hero_buff_config_round_trips_and_needs_a_buff():
+    good = _buff_rule(_MUERTA, "STACK_LOST")
+    dumped = RulesConfig.model_validate({"rules": [good]}).model_dump(mode="json")["rules"][0]["monitor"]
+    assert dumped == good["monitor"]
+    bad = {**good, "monitor": {"type": "hero_buff", "event": "STACK_LOST"}}
+    try:
+        RulesConfig.model_validate({"rules": [bad]})
+    except ValueError:
+        return
+    raise AssertionError("a hero_buff rule without a buff was accepted")
+
+
 # Real ward frames (enemy_torm_ad t=1113-1121, ad_snap_buyback t=446-450, soundbo.log 2026-11-22):
 # a use shows cooldown 1 / max_cooldown 1 for a frame or two, then max_cooldown stays 1 at
 # cooldown 0 for as long as the ward is held. The generic item monitor read that as a cast on
@@ -491,3 +559,11 @@ def test_ward_fires_again_for_the_next_use():
     frames = [_ward_snap(name, 0, 0, 2), _ward_snap(name, 1, 1, 1), _ward_snap(name, 0, 1, 1),
               _ward_snap(name, 1, 1, 0), _ward_snap(name, 0, 1, 0)]
     assert _ward_starts(name, frames) == 2
+
+
+def test_parse_hero_reads_permanent_buffs_stack_counts():
+    from src.state.hero import parse_hero
+    base = {"facet": 1, "id": 1, "name": "npc_dota_hero_muerta"}
+    assert parse_hero(base).permanent_buffs == {}
+    raw = {**base, "permanent_buffs": {_MUERTA: {"stack_count": 3}, "modifier_item_aghanims_shard": {"stack_count": 0}}}
+    assert parse_hero(raw).permanent_buffs == {_MUERTA: 3, "modifier_item_aghanims_shard": 0}

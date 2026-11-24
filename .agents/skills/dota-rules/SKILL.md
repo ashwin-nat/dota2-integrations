@@ -63,6 +63,7 @@ Read this before adding any `light` action.
   - `CHARGED` / `OVERCHARGED`: while Midas has that many charges
   - `HERO_KILLED`: while dead; `HERO_RESPAWNED`: while alive, i.e. most of the time
   - `hero_int` `BUYBACK_COOLDOWN_RISES` ("buyback used"): a moment, the frame the buyback is bought: `{"type": "hero_int", "field": "buyback_cooldown"}`
+  - `hero_buff` `STACK_GAINED` / `STACK_LOST`: a moment when a permanent buff's stacks rise / fall: `{"type": "hero_buff", "buff": "modifier_muerta_supernatural", "event": "STACK_LOST"}`. Some buffs only grow (e.g. `modifier_tidehunter_leviathans_catch_counter`), so `STACK_LOST` never fires for them
 
   When a rule's timing would keep a colour on for a long time (ITEM_ACQUIRED, COOLDOWN_READY, HERO_RESPAWNED), point this out before adding it. A sound-only rule is often what the user actually wants.
 - `PAUSED` / `UNPAUSED` are map events, so a light on them replaces the baseline until the next day/night change. Warn the user about that.

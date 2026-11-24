@@ -8,6 +8,8 @@ logs/
 
 # Sample GSI payloads (local test data, not source)
 *.json
+# The editor data files are source, not samples
+!src/config_ui/static/permanent_buffs.json
 
 media/*
 
