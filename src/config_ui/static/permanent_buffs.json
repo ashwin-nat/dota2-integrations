@@ -22,5 +22,77 @@
     "description": "Axe permanently drenches his blade every time he kills an enemy Hero with Culling Blade, gaining bonus armor for each stack.",
     "kind": "monotonic",
     "icon": "ability:axe_culling_blade"
+  },
+  {
+    "key": "modifier_rattletrap_junk_mail",
+    "name": "Armor Power",
+    "tooltip": "Clockwerk's permanent armor from consumed Chainmails.",
+    "description": "Clockwerk can consume Chainmails to permanently gain +4 armor per Chainmail consumed. Can stack. Self-cast to consume.\nClockwerk's outgoing damage also increases by 0.55845% per point of armor.",
+    "kind": "monotonic",
+    "icon": "hero:rattletrap"
+  },
+  {
+    "key": "modifier_slark_essence_shift_permanent_buff",
+    "name": "Essence Shift",
+    "tooltip": "Slark's permanent Agility stolen by killing heroes affected by Essence Shift.",
+    "description": "Slark steals the life essence of enemy heroes with his attacks, draining 1 of each of their attributes and converting them to bonus 3 Agility. If Slark kills an affected enemy hero, he permanently steals 1 Agility.\nOnly the permanent stacks from kills count here, not the temporary ones from attacks.",
+    "kind": "monotonic",
+    "icon": "ability:slark_essence_shift"
+  },
+  {
+    "key": "modifier_lion_finger_of_death_kill_counter",
+    "name": "Finger of Death",
+    "tooltip": "Lion's permanent Finger of Death bonus damage from hero kills.",
+    "description": "Finger of Death gains permanent bonus damage for it and the fist for each enemy Hero it or the fist kills.\nOne stack per hero killed; several kills in the same moment (a Scepter Finger hitting more than one hero) count as one gain.",
+    "kind": "monotonic",
+    "icon": "ability:lion_finger_of_death"
+  },
+  {
+    "key": "modifier_silencer_brain_drain",
+    "name": "Suffer In Silence",
+    "tooltip": "Silencer's permanent Intelligence stolen from enemy heroes dying near him.",
+    "description": "If an enemy Hero dies within 925 range of Silencer or was debuffed by Silencer at the time of death, Silencer permanently steals 1 Intelligence from them. If the victim was silenced, steal an extra 1 Intelligence.\nSilencer also takes less damage from and deals more damage to silenced targets.",
+    "kind": "monotonic",
+    "icon": "ability:silencer_brain_drain"
+  },
+  {
+    "key": "modifier_pudge_innate_graft_flesh",
+    "name": "Flesh Heap",
+    "tooltip": "Pudge's permanent Strength stacks from enemy hero kills.",
+    "description": "Pudge's skin thickens permanently every time he kills an enemy Hero, gaining 2 bonus Strength for each stack.\nThe stacks are kept when Pudge dies.",
+    "kind": "monotonic",
+    "icon": "ability:pudge_innate_graft_flesh"
+  },
+  {
+    "key": "modifier_rubick_curiosity_from_heroes_tracker",
+    "name": "Curiosity",
+    "tooltip": "Rubick's permanent Curiosity from enemy hero kills.",
+    "description": "If an enemy Hero dies while Rubick has Curiosity from them and he damaged them in the last 3 seconds, he gains 1 Curiosity permanently. Each stack grants 1 base damage, 0.3% Buff/Debuff Duration, and 2 AOE Bonus.\nOnly these permanent kill stacks count here, not the stacks per level or the temporary ones from seeing enemies cast.",
+    "kind": "monotonic",
+    "icon": "ability:rubick_curiosity"
+  },
+  {
+    "key": "modifier_arc_warden_runic_infusion",
+    "name": "Runic Infusion",
+    "tooltip": "Arc Warden's permanent attributes from activating Power Runes.",
+    "description": "Runes of Power fuse to the Self. Arc Warden gains +1.5 all attributes permanently whenever Arc Warden or the Tempest Double activates a Power Rune.\nThe stacks are kept when Arc Warden dies.",
+    "kind": "monotonic",
+    "icon": "ability:arc_warden_runic_infusion"
+  },
+  {
+    "key": "modifier_legion_commander_duel_damage_boost",
+    "name": "Duel",
+    "tooltip": "Legion Commander's permanent bonus damage from winning Duels.",
+    "description": "Legion Commander and the target enemy hero are forced to attack each other for a short duration. If either hero dies during the duration, the hero winning the Duel gains permanent bonus damage.\nThe count is the bonus damage itself, so each won Duel adds several points at once; it still counts as one gain. Losing a Duel or dying doesn't remove any.",
+    "kind": "monotonic",
+    "icon": "ability:legion_commander_duel"
+  },
+  {
+    "key": "modifier_life_stealer_feast",
+    "name": "Feast",
+    "tooltip": "Lifestealer's permanent max HP from killing creeps and heroes.",
+    "description": "Lifestealer's attacks deal damage and provide heal for a percentage of his target's max health. He gains 1 permanent max HP whenever he kills a creep and 10 permanent max HP whenever he kills a hero.\nThe count is the max HP gained, and it rises on every creep last hit as well as every hero kill, so a Stack gained rule plays very often.",
+    "kind": "monotonic",
+    "icon": "ability:life_stealer_feast"
   }
 ]
