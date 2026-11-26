@@ -58,11 +58,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 
 .brand { display: flex; align-items: center; gap: 12px; }
-.brand-mark {
-  font-size: 26px;
-  color: var(--red-hi);
-  text-shadow: 0 0 12px rgba(226,90,69,.6);
-}
+.brand-mark { height: 38px; width: auto; }
 .brand-title {
   font-family: "Cinzel", serif;
   font-weight: 800;
@@ -86,7 +82,7 @@ button, input, select { font: inherit; color: inherit; }
 /* Bigger screens sit further away: scale the top bar up */
 @media (min-width: 1600px) {
   .topbar { padding: 12px 24px; }
-  .brand-mark { font-size: 30px; }
+  .brand-mark { height: 44px; }
   .brand-title { font-size: 23px; }
   .brand-sub { font-size: 13px; }
   .topbar .master-vol, .topbar .toggle, .topbar .status, .topbar select { font-size: 15px; }

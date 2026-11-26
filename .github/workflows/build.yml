@@ -43,7 +43,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           # --windowed: no console window; the tray icon is how people open the editor and quit
-          uv run pyinstaller --onefile --windowed --paths . --name Soundbo \
+          uv run pyinstaller --onefile --windowed --paths . --name Soundbo --icon src/config_ui/static/icon.png \
             --hidden-import pystray._win32 \
             --add-data "src/config_ui/static:src/config_ui/static" \
             $( [ -f src/library_link.txt ] && echo --add-data "src/library_link.txt:src" ) src/main.py
@@ -56,7 +56,7 @@ jobs:
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |
-          uv run pyinstaller --windowed --paths . --name Soundbo \
+          uv run pyinstaller --windowed --paths . --name Soundbo --icon src/config_ui/static/icon.png \
             --osx-bundle-identifier io.github.ashwin-nat.soundbo \
             --hidden-import pystray._darwin \
             --add-data "src/config_ui/static:src/config_ui/static" \

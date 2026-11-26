@@ -9,7 +9,7 @@ Grab the latest build from the [Releases page](https://github.com/ashwin-nat/dot
 - **Windows:** `soundbo-windows.exe`
 - **Mac (Apple Silicon, M1 and later):** `soundbo-mac.zip`
 
-Starting the app opens the rules editor in your browser. It also sets up Dota 2 to send it game state, by writing `gamestate_integration_soundbo.cfg` into every Dota install it finds (restart Dota if it was running). The app has no window of its own. It shows a ◆ icon in the menu bar (Mac) or the system tray (Windows); click it to reopen the editor, or choose **Quit**. On a Mac, clicking the app's Dock icon also reopens the editor.
+Starting the app opens the rules editor in your browser. It also sets up Dota 2 to send it game state, by writing `gamestate_integration_soundbo.cfg` into every Dota install it finds (restart Dota if it was running). The app has no window of its own. It shows its icon in the menu bar (Mac) or the system tray (Windows); click it to reopen the editor, or choose **Quit**. On a Mac, clicking the app's Dock icon also reopens the editor.
 
 Settings, sounds and logs (`logs/soundbo.log`) are kept in `~/Library/Application Support/Soundbo/` on a Mac and `%APPDATA%\Soundbo\` on Windows. A `dota2-integrations` folder from before the rename is moved there on first launch. An older Windows setup with `rules.json` next to the .exe keeps using that folder.
 

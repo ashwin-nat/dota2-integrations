@@ -207,7 +207,7 @@ Every item-, ability- or field-specific monitor class or config type (one with `
 ## Build & Release
 
 ```bash
-uv run pyinstaller --onefile --windowed --paths . --name Soundbo --hidden-import pystray._win32 \
+uv run pyinstaller --onefile --windowed --paths . --name Soundbo --icon src/config_ui/static/icon.png --hidden-import pystray._win32 \
   --add-data "src/config_ui/static:src/config_ui/static" src/main.py   # -> dist/Soundbo.exe
 ```
 

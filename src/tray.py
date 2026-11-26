@@ -7,22 +7,20 @@ asyncio app runs in a background thread while this runs the platform's event loo
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Callable
 
 from src import osutil
 
 logger = logging.getLogger(__name__)
 
+ICON_PATH = Path(__file__).parent / "config_ui" / "static" / "icon.png"
+
 
 def _image():
-    from PIL import Image, ImageDraw
+    from PIL import Image
 
-    # A gold diamond like the editor's logo
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.polygon([(32, 4), (60, 32), (32, 60), (4, 32)], fill=(201, 166, 90, 255), outline=(255, 226, 150, 255))
-    d.polygon([(32, 20), (44, 32), (32, 44), (20, 32)], fill=(120, 40, 30, 255))
-    return img
+    return Image.open(ICON_PATH).resize((64, 64), Image.LANCZOS)
 
 
 def _reopen_from_dock(open_editor: Callable[[], None]) -> None:
