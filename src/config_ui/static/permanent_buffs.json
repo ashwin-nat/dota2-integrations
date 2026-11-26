@@ -53,7 +53,7 @@
     "tooltip": "Silencer's permanent Intelligence stolen from enemy heroes dying near him.",
     "description": "If an enemy Hero dies within 925 range of Silencer or was debuffed by Silencer at the time of death, Silencer permanently steals 1 Intelligence from them. If the victim was silenced, steal an extra 1 Intelligence.\nSilencer also takes less damage from and deals more damage to silenced targets.",
     "kind": "monotonic",
-    "icon": "ability:silencer_brain_drain"
+    "icon": "hero:silencer"
   },
   {
     "key": "modifier_pudge_innate_graft_flesh",

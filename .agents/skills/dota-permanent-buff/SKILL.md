@@ -17,7 +17,7 @@ python -I -c "import json,sys; c=json.load(open('.cache/catalog.json',encoding='
 
 From it, take:
 
-- **The hero and ability keys**, for `icon` (e.g. `ability:rattletrap_armor_power`). If no ability fits (a talent, a facet, an item effect), use the hero key: `hero:<key>`.
+- **The hero and ability keys**, for `icon` (e.g. `ability:tidehunter_leviathans_catch`). If no ability fits (a talent, a facet, an item effect), use the hero key: `hero:<key>`. An ability being in the cache does **not** mean Valve's CDN has its image: newer innates often have none (`silencer_brain_drain`, `rattletrap_armor_power`). Step 3 checks this.
 - **The ability's in-game text**, for `description` and `tooltip`.
 - **What the text says about the stacks** ("permanently", "loses half on death", and so on). This is your first reading of `kind`.
 
@@ -66,22 +66,28 @@ Append an object to the array in `src/config_ui/static/permanent_buffs.json`, wi
 - `tooltip`: one short line, shown in the hover tooltip on the grid icon.
 - `description`: the fuller text shown under the title in the inspector. Take it from the ability's in-game text.
 - `kind`: `monotonic` or `bidirectional` (see above).
-- `icon`: `ability:<name>`, `item:<name>` or `hero:<name>`. Use the ability when there is one. When the buff has no ability icon (a talent, a facet, an item effect), use `hero:<hero key>`, e.g. `hero:bounty_hunter`. The name must match the CDN image name exactly. Valve's CDN also lacks some icons that dotaconstants lists (newer innates such as `rattletrap_armor_power`); for an `ability:` icon the editor then shows the hero's portrait (`abilityImg` in `app.js`), and for an `item:` or `hero:` one a broken image. The file test can't catch either, so check it in step 4. You have it from step 1; for an item, item keys are under `items` in the same file.
+- `icon`: `ability:<name>`, `item:<name>` or `hero:<name>`. Use the ability when there is one. When the buff has no ability icon (a talent, a facet, an item effect), use `hero:<hero key>`, e.g. `hero:bounty_hunter`. You have the name from step 1; for an item, item keys are under `items` in the same file. The name must match the CDN image name exactly, and **there is no fallback**: a missing image is a 404 HTML page, shown as a broken icon (Firefox logs "A resource is blocked by OpaqueResponseBlocking"). Before writing the entry, check the image exists:
+
+  ```
+  curl -s -o /dev/null -w '%{http_code} %{content_type}\n' https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/abilities/<name>.png
+  ```
+
+  (`items/` or `heroes/` for the other sources.) Anything but `200 image/png` means that icon can't be used. Don't guess other spellings. Use `hero:<hero key>` and tell the user the ability has no CDN image (Clockwerk's Armor Power and Silencer's Suffer In Silence both use this). To see what a hero's abilities are actually called, Valve's datafeed lists them: `https://www.dota2.com/datafeed/herodata?language=english&hero_id=<id>` (`result.data.heroes[0].abilities[].name`, innates marked `ability_is_innate`).
 
 Keep the file's two-space indentation and its trailing newline. The file is un-ignored in `.gitignore` (`*.json` is otherwise ignored), so check it appears in `git status`.
 
 ## 4. Check
 
-1. `uv run pytest` (the file test runs with the suite).
-2. Open the editor (`uv run python -m src.main --no-browser`, volume 0, `/ui`), go to Permanent buffs, and confirm the new icon (the ability's own icon, or the hero portrait if Valve's CDN has none), its tooltip, and the tabs: one for `monotonic`, two for `bidirectional`.
-3. Optionally prove the trigger against the recording: add a rule with a harmless light action (rules with no enabled actions are skipped) and replay it with the `dota-replay` skill, then compare the fired rows in `logs/dota2-integrations.log` with the `frames.py` table.
-4. Check if icon works/populates.
+1. `uv run pytest` (the file test runs with the suite; it checks fields, not icons).
+2. **`uv run python tools/check_buff_icons.py` must print `all icons load` and exit 0.** It builds every entry's icon URL the way `app.js` does and fails on anything but a 200 image. A `FAIL` line is a blocker: fix the icon (step 3) and run it again. Don't hand off with a failing icon, and don't skip this because the curl in step 3 passed. It checks the whole file, so it also catches older entries whose image Valve has since removed. It needs the network; if it can't reach the CDN, say so in the hand-off rather than calling the icons checked.
+3. Open the editor (`uv run python -m src.main --no-browser`, volume 0, `/ui`), go to Permanent buffs, and confirm the new icon shows (not a broken image), its tooltip, and the tabs: one for `monotonic`, two for `bidirectional`.
+4. Optionally prove the trigger against the recording: add a rule with a harmless light action (rules with no enabled actions are skipped) and replay it with the `dota-replay` skill, then compare the fired rows in `logs/dota2-integrations.log` with the `frames.py` table.
 
 If a buff misbehaves in a way a generic stack counter can't handle, don't special-case it in the data file; that is a `dota-monitor` change (and a "Why its own class:" note).
 
 ## 5. Hand-off
 
-Show the user the new JSON entry and say what the recording showed (which frames the stacks changed in, and the reasoning for `kind`). Mention anything unverified: no recording of the buff dropping, an icon not yet seen in the editor or one that fell back to the hero portrait, and so on. Then stop and let them review. **Do not commit until they explicitly approve**, on the current branch, with no push and no attribution trailers.
+Show the user the new JSON entry and say what the recording showed (which frames the stacks changed in, and the reasoning for `kind`). Include the `check_buff_icons.py` result. If the icon is `hero:` because the ability has no CDN image, say so. Mention anything unverified: no recording of the buff dropping, an icon not yet seen in the editor, and so on. Then stop and let them review. **Do not commit until they explicitly approve**, on the current branch, with no push and no attribution trailers.
 
 ## What the rule looks like
 

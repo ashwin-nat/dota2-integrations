@@ -93,6 +93,7 @@ src/
 tests/                         # pytest
 tools/replay.py                # replay / step through recordings
 tools/frames.py                # print how one ability/item/hero block changes across a recording
+tools/check_buff_icons.py      # check every permanent_buffs.json icon loads from Valve's CDN (no fallback in the editor)
 ```
 
 ## Key Design Decisions
