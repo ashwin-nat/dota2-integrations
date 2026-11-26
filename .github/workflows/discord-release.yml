@@ -1,0 +1,28 @@
+# Posts a release announcement to Discord. release.yml calls it after publishing;
+# run it manually from the Actions tab to test or re-post.
+name: Discord release notification
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v0.1.0'
+        required: true
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TAG: ${{ inputs.tag }}
+          RELEASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.tag }}
+        run: |
+          jq -n --arg content "New Soundbo release: **$TAG**"$'\n'"$RELEASE_URL" '{content: $content}' |
+            curl --fail-with-body -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"

@@ -31,3 +31,10 @@ jobs:
           gh release create "${{ inputs.tag }}" assets/* --target "${{ github.sha }}" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  discord:
+    needs: release
+    uses: ./.github/workflows/discord-release.yml
+    with:
+      tag: ${{ inputs.tag }}
+    secrets: inherit
